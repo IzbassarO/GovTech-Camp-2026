@@ -13,6 +13,11 @@ from dalel.config import INGESTION_SCHEMA_VERSION, MODEL_INPUTS_DIRNAME, process
 
 logger = logging.getLogger(__name__)
 
+_EXPECTED_SKIP_REASONS = {
+    "auxiliary_archive_never_ingested",
+    "excluded_by_leakage_boundary",
+}
+
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -55,7 +60,21 @@ class BatchResult:
 
     @property
     def ok(self) -> bool:
-        return all(r.status != "failed" for r in self.results)
+        """Whether the CLI may report a successful batch.
+
+        An empty result set and an unexpected ``skipped`` result are failures:
+        otherwise a selection/routing regression could silently exit zero without
+        producing output. Cache hits and the explicit leakage/archive boundary are
+        expected no-output outcomes.
+        """
+        if not self.results:
+            return False
+        for result in self.results:
+            if result.status == "failed":
+                return False
+            if result.status == "skipped" and result.reason not in _EXPECTED_SKIP_REASONS:
+                return False
+        return True
 
 
 def _read_document_json(path: Path) -> dict[str, Any] | None:

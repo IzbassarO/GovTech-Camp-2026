@@ -38,6 +38,28 @@ def test_batch_default_selection(tmp_repo, fake_docling) -> None:
     assert not label_sources.exists()
 
 
+def test_interleaved_label_skip_never_stops_later_model_inputs(tmp_repo, fake_docling) -> None:
+    project = json.loads(tmp_repo.manifest_path.read_text(encoding="utf-8").splitlines()[0])
+    documents = {document["document_id"]: document for document in project["documents"]}
+    project["documents"] = [
+        documents["project_t1__ndv__001"],
+        documents["project_t1__hearing_protocol__001"],
+        documents["project_t1__action_plan__001"],
+        documents["project_t1__archive__001"],
+        documents["project_t1__nontechnical_summary__001"],
+    ]
+    tmp_repo.manifest_path.write_text(json.dumps(project) + "\n", encoding="utf-8")
+
+    batch = ingest_documents(_options(tmp_repo))
+    results = _result_map(batch)
+
+    assert results["project_t1__hearing_protocol__001"].status == "skipped"
+    assert results["project_t1__action_plan__001"].status == "success"
+    assert results["project_t1__nontechnical_summary__001"].status == "success"
+    assert fake_docling == {"pdf": 2, "docx": 1}
+    assert batch.ok
+
+
 def test_label_source_written_to_separate_tree(tmp_repo, fake_docling) -> None:
     batch = ingest_documents(_options(tmp_repo, include_label_sources=True))
     results = _result_map(batch)
@@ -181,6 +203,7 @@ def test_one_document_failure_does_not_stop_batch(tmp_repo, monkeypatch, fake_do
     assert results["project_t1__ndv__001"].status == "failed"
     assert results["project_t1__ndv__001"].reason == "unexpected_error"
     assert results["project_t1__nontechnical_summary__001"].status == "success"
+    assert not batch.ok
 
 
 def test_page_provenance_recorded(tmp_repo, fake_docling) -> None:

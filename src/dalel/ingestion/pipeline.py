@@ -112,6 +112,15 @@ def ingest_documents(options: IngestOptions) -> BatchResult:
         include_label_sources=options.include_label_sources,
     )
     _warn_on_empty_filters(options, selection, projects)
+    logger.info(
+        "selection complete: selected=%d skipped=%d project_id=%s document_id=%s"
+        " include_label_sources=%s",
+        len(selection.selected),
+        len(selection.skipped),
+        options.project_id or "*",
+        options.document_id or "*",
+        options.include_label_sources,
+    )
 
     for skipped in selection.skipped:
         logger.info(
@@ -134,6 +143,7 @@ def ingest_documents(options: IngestOptions) -> BatchResult:
 
     for selected in selection.selected:
         project, document = selected.project, selected.document
+        logger.info("ingest start %s/%s", project.project_id, document.document_id)
         try:
             result = _ingest_one(project, document, options)
         except Exception as exc:  # one document must never stop the batch
@@ -154,6 +164,22 @@ def ingest_documents(options: IngestOptions) -> BatchResult:
                 errors=[f"{type(exc).__name__}: {exc}"],
             )
         batch.results.append(result)
+        if result.status == ExtractionStatus.FAILED.value:
+            logger.error(
+                "ingest failed %s/%s: reason=%s errors=%s",
+                project.project_id,
+                document.document_id,
+                result.reason or "unknown",
+                "; ".join(result.errors) or "none reported",
+            )
+        else:
+            logger.info(
+                "ingest complete %s/%s: status=%s reason=%s",
+                project.project_id,
+                document.document_id,
+                result.status,
+                result.reason or "none",
+            )
 
     _write_project_summaries(options.repo_root, projects, batch)
     batch.completed_at = utc_now_iso()
