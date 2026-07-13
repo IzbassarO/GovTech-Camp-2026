@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "project_id": "project_002_azm",
+  "annotation_type": "weak_labels",
+  "source_documents": [
+    "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf"
+  ],
+  "review_status": "not_expert_verified",
+  "findings": [
+    {
+      "finding_id": "project_002_azm__weak__001",
+      "issue_type": "internal_metadata_inconsistency",
+      "title": "Несогласованный номер договора в проекте НДВ",
+      "description": "В ответе инициатора признано, что во введении проекта НДВ был ошибочно указан договор №25 от 26.05.2022 вместо договора №17 от 21.08.2025.",
+      "severity": "unknown",
+      "source_document": "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf",
+      "source_page": 3,
+      "target_documents": [
+        "data/raw/project_002_azm/1. НДВ для АО АЗМ на 2026-2035гг..pdf"
+      ],
+      "evidence_text": "Указание договора №25 от 26.05.2022 г. является технической опечаткой.",
+      "confidence": "weak",
+      "expert_verified": false
+    },
+    {
+      "finding_id": "project_002_azm__weak__002",
+      "issue_type": "wrong_entity_reference",
+      "title": "Ссылка на постороннее предприятие в разделе 8.6 НДВ",
+      "description": "В протоколе признано, что упоминание АО «НК «Актауский морской торговый порт» в разделе 8.6 проекта НДВ является опечаткой и должно быть исправлено.",
+      "severity": "unknown",
+      "source_document": "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf",
+      "source_page": 3,
+      "target_documents": [
+        "data/raw/project_002_azm/1. НДВ для АО АЗМ на 2026-2035гг..pdf"
+      ],
+      "evidence_text": "В разделе 8.6 произошла опечатка. Информация будет исправлена.",
+      "confidence": "weak",
+      "expert_verified": false
+    },
+    {
+      "finding_id": "project_002_azm__weak__003",
+      "issue_type": "wrong_entity_reference",
+      "title": "Таблица 3.3 содержит реквизиты ТОО «ТАЛРЫС»",
+      "description": "Ответ инициатора подтверждает, что таблица 3.3 ошибочно содержит параметры для ТОО «ТАЛРЫС», хотя проект предназначен для АО «АЗМ».",
+      "severity": "unknown",
+      "source_document": "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf",
+      "source_page": 4,
+      "target_documents": [
+        "data/raw/project_002_azm/1. НДВ для АО АЗМ на 2026-2035гг..pdf"
+      ],
+      "evidence_text": "В Таблице 3.3 произошла опечатка: параметры указаны для ТОО «ТАЛРЫС».",
+      "confidence": "weak",
+      "expert_verified": false
+    },
+    {
+      "finding_id": "project_002_azm__weak__004",
+      "issue_type": "wrong_entity_reference",
+      "title": "Бланки инвентаризации содержат реквизиты ТОО «ТАЛРЫС»",
+      "description": "В протоколе признано, что бланки инвентаризации ошибочно оформлены как составленные ТОО «ТАЛРЫС» вместо разработчика ТОО «КБК Групп ЛТД».",
+      "severity": "unknown",
+      "source_document": "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf",
+      "source_page": 4,
+      "target_documents": [
+        "data/raw/project_002_azm/1. НДВ для АО АЗМ на 2026-2035гг..pdf"
+      ],
+      "evidence_text": "Бланки инвентаризации указаны как составленные ТОО «ТАЛРЫС».",
+      "confidence": "weak",
+      "expert_verified": false
+    },
+    {
+      "finding_id": "project_002_azm__weak__005",
+      "issue_type": "stale_document_version",
+      "title": "В пакет была включена устаревшая сводная таблица",
+      "description": "Инициатор сообщил, что ранее по технической ошибке была приложена предыдущая версия сводной таблицы и что её заменили версией от 14.11.2025.",
+      "severity": "unknown",
+      "source_document": "data/raw/project_002_azm/Протокол-общ.слушания АО АЗМ.pdf",
+      "source_page": 5,
+      "target_documents": [
+        "data/raw/project_002_azm/1. НДВ для АО АЗМ на 2026-2035гг..pdf"
+      ],
+      "evidence_text": "По технической ошибке была приложена предыдущая версия сводной таблицы.",
+      "confidence": "weak",
+      "expert_verified": false
+    }
+  ]
+}

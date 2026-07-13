@@ -1,0 +1,38 @@
+# Raw and generated datasets
+data/raw/
+data/processed/
+
+# Preserve metadata and annotations
+!data/manifests/
+!data/manifests/**
+!data/annotations/
+!data/annotations/**
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+
+# Local caches
+.cache/
