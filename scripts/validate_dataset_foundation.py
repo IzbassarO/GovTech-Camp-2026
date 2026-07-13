@@ -393,24 +393,43 @@ class Validator:
     def validate_file_inventory(self) -> None:
         records = self.load_jsonl(FILE_INVENTORY, "file inventory")
         seen_paths: set[str] = set()
+        # Volatile OS artifacts (e.g. .DS_Store) are classified by the audit as
+        # ignored non-dataset artifacts; Finder rewrites or deletes them at
+        # will, so their drift is a warning rather than a foundation error.
+        volatile_paths: set[str] = set()
 
         for index, record in enumerate(records, start=1):
             context = f"file inventory record {index}"
             relative_path = record.get("relative_path")
             path = self.resolve_repo_path(relative_path, f"{context}.relative_path")
+            is_volatile_artifact = record.get("status") == "ignored_non_dataset_artifact"
             if isinstance(relative_path, str):
                 if relative_path == "data/manifests/file_inventory.jsonl":
                     self.error(f"{context}: inventory must not contain an unstable self-reference")
                 if relative_path in seen_paths:
                     self.error(f"{context}: duplicate relative_path: {relative_path}")
                 seen_paths.add(relative_path)
+                if is_volatile_artifact:
+                    volatile_paths.add(relative_path)
 
             expected_hash = record.get("sha256")
             if not isinstance(expected_hash, str) or len(expected_hash) != 64:
                 self.error(f"{context}: sha256 must be a 64-character string")
             if path is not None:
                 if not path.is_file():
-                    self.error(f"{context}: file does not exist: {relative_path}")
+                    if is_volatile_artifact:
+                        self.warn(f"{context}: volatile non-dataset artifact is absent: {relative_path}")
+                    else:
+                        self.error(f"{context}: file does not exist: {relative_path}")
+                elif is_volatile_artifact:
+                    if record.get("size_bytes") != path.stat().st_size or (
+                        isinstance(expected_hash, str)
+                        and len(expected_hash) == 64
+                        and self.sha256(path) != expected_hash
+                    ):
+                        self.warn(
+                            f"{context}: volatile non-dataset artifact drifted: {relative_path}"
+                        )
                 else:
                     if record.get("size_bytes") != path.stat().st_size:
                         self.error(f"{context}: size mismatch: {relative_path}")
@@ -418,13 +437,26 @@ class Validator:
                         if self.sha256(path) != expected_hash:
                             self.error(f"{context}: SHA-256 mismatch: {relative_path}")
 
+        # data/processed holds derived Phase 0 ingestion outputs; the audited
+        # inventory covers only the immutable dataset foundation beneath data/.
+        processed_prefix = (DATA / "processed").resolve()
+
+        def _is_processed(path: Path) -> bool:
+            try:
+                path.resolve().relative_to(processed_prefix)
+                return True
+            except ValueError:
+                return False
+
         expected_paths = {
             path.relative_to(ROOT).as_posix()
             for path in DATA.rglob("*")
-            if path.is_file() and path.resolve() != FILE_INVENTORY.resolve()
+            if path.is_file()
+            and path.resolve() != FILE_INVENTORY.resolve()
+            and not _is_processed(path)
         }
         missing = sorted(expected_paths - seen_paths)
-        extra = sorted(seen_paths - expected_paths)
+        extra = sorted(seen_paths - expected_paths - volatile_paths)
         if missing:
             self.error(f"file inventory: missing physical files: {missing}")
         if extra:
