@@ -23,9 +23,11 @@ from dalel.ingestion.parsed import (
     ParsedPage,
     ParsedSection,
     ParsedTable,
+    SkippedTableItem,
 )
 from dalel.ingestion.pdf_mode import PdfAnalysis
 from dalel.schemas.evidence import BBox
+from dalel.schemas.table import table_content_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -51,18 +53,34 @@ def _ocr_page_text(page: Any) -> str:
     return page.get_text("text", textpage=textpage) or ""
 
 
-def _extract_tables(page: Any, page_number: int) -> list[ParsedTable]:
+def _extract_tables(
+    page: Any, page_number: int
+) -> tuple[list[ParsedTable], list[SkippedTableItem]]:
+    """Extract page tables, pre-filtering empty or unextractable table items."""
     tables: list[ParsedTable] = []
+    skipped: list[SkippedTableItem] = []
     try:
         found = page.find_tables()
     except Exception as exc:
         logger.warning("page %d: find_tables failed: %s", page_number, exc)
-        return tables
+        return tables, skipped
     for table in getattr(found, "tables", []):
         try:
             cells = [
                 [(cell if cell is not None else "") for cell in row] for row in table.extract()
             ]
+            num_rows = len(cells)
+            num_cols = max((len(row) for row in cells), default=0)
+            if not table_content_is_valid(num_rows, num_cols, cells):
+                skipped.append(
+                    SkippedTableItem(
+                        page_number=page_number,
+                        reference=None,
+                        extraction_method=PARSER_NAME,
+                        message="pymupdf table item has no rows/columns/cell content",
+                    )
+                )
+                continue
             rect = table.bbox
             bbox = BBox(l=float(rect[0]), t=float(rect[1]), r=float(rect[2]), b=float(rect[3]))
             tables.append(
@@ -70,18 +88,20 @@ def _extract_tables(page: Any, page_number: int) -> list[ParsedTable]:
                     page_number=page_number,
                     bbox=bbox,
                     cells=cells,
-                    num_rows=len(cells),
-                    num_cols=max((len(row) for row in cells), default=0),
+                    num_rows=num_rows,
+                    num_cols=num_cols,
                 )
             )
         except Exception as exc:
-            tables.append(
-                ParsedTable(
+            skipped.append(
+                SkippedTableItem(
                     page_number=page_number,
-                    warnings=[f"table extraction failed: {exc}"],
+                    reference=None,
+                    extraction_method=PARSER_NAME,
+                    message=f"table extraction failed: {exc}",
                 )
             )
-    return tables
+    return tables, skipped
 
 
 def _extract_sections(doc: Any, page_texts: dict[int, str], page_count: int) -> list[ParsedSection]:
@@ -218,7 +238,9 @@ def parse_pdf_fallback(path: Path, analysis: PdfAnalysis, ocr_mode: OcrMode) -> 
                 result.pages[-1].warnings.append("page_has_no_text_and_ocr_disabled")
 
             page = doc[info.page_number - 1]
-            result.tables.extend(_extract_tables(page, info.page_number))
+            page_tables, page_skipped_tables = _extract_tables(page, info.page_number)
+            result.tables.extend(page_tables)
+            result.skipped_empty_tables.extend(page_skipped_tables)
             result.images.extend(extract_page_images(doc, page, info.page_number))
 
     if ocr.engine_ran:

@@ -19,7 +19,9 @@ from dalel.ingestion.parsed import (
     ParsedPage,
     ParsedSection,
     ParsedTable,
+    SkippedTableItem,
 )
+from dalel.schemas.table import table_content_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -109,18 +111,37 @@ def parse_docx_fallback(path: Path) -> ParsedDocument:
     for table in document.tables:
         try:
             cells = [[cell.text for cell in row.cells] for row in table.rows]
+            num_rows = len(cells)
+            num_cols = max((len(row) for row in cells), default=0)
+            if not table_content_is_valid(num_rows, num_cols, cells):
+                parsed.skipped_empty_tables.append(
+                    SkippedTableItem(
+                        page_number=None,
+                        reference=None,
+                        extraction_method=PARSER_NAME,
+                        message="docx table has no rows/columns/cell content",
+                    )
+                )
+                continue
             parsed.tables.append(
                 ParsedTable(
                     page_number=None,
                     bbox=None,
                     cells=cells,
-                    num_rows=len(cells),
-                    num_cols=max((len(row) for row in cells), default=0),
+                    num_rows=num_rows,
+                    num_cols=num_cols,
                     warnings=["docx table has no page number or bbox"],
                 )
             )
         except Exception as exc:
-            parsed.tables.append(ParsedTable(warnings=[f"docx table extraction failed: {exc}"]))
+            parsed.skipped_empty_tables.append(
+                SkippedTableItem(
+                    page_number=None,
+                    reference=None,
+                    extraction_method=PARSER_NAME,
+                    message=f"docx table extraction failed: {exc}",
+                )
+            )
 
     try:
         for rel in document.part.rels.values():

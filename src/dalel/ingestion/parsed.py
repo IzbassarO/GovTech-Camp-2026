@@ -60,6 +60,21 @@ class ParsedImage:
 
 
 @dataclass
+class SkippedTableItem:
+    """A parser-detected table item that failed the table validity contract.
+
+    It is never serialized into ``tables.jsonl``; the pipeline converts it into
+    an ``empty_table_item_skipped`` document warning and report counters. No
+    field is invented: unknown page/reference stay ``None``.
+    """
+
+    page_number: int | None = None
+    reference: str | None = None  # parser-native item reference (e.g. docling self_ref)
+    extraction_method: str = ""
+    message: str = ""
+
+
+@dataclass
 class OcrOutcome:
     """What OCR actually did during one parser run."""
 
@@ -80,6 +95,9 @@ class ParsedDocument:
     pages: list[ParsedPage] = field(default_factory=list)
     sections: list[ParsedSection] = field(default_factory=list)
     tables: list[ParsedTable] = field(default_factory=list)
+    # Table items the parser detected but pre-filtered as empty (layer 1 of
+    # the table validity contract); reported, never serialized.
+    skipped_empty_tables: list[SkippedTableItem] = field(default_factory=list)
     images: list[ParsedImage] = field(default_factory=list)
     ocr: OcrOutcome = field(default_factory=OcrOutcome)
     # Parser-provided confidence report; None when the parser has none.

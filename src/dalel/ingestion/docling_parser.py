@@ -26,9 +26,11 @@ from dalel.ingestion.parsed import (
     ParsedPage,
     ParsedSection,
     ParsedTable,
+    SkippedTableItem,
 )
 from dalel.ingestion.pdf_mode import PdfAnalysis
 from dalel.schemas.evidence import BBox
+from dalel.schemas.table import table_content_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -175,8 +177,15 @@ def _build_sections(document: Any) -> list[ParsedSection]:
     return sections
 
 
-def _build_tables(document: Any) -> list[ParsedTable]:
+def _build_tables(document: Any) -> tuple[list[ParsedTable], list[SkippedTableItem]]:
+    """Convert Docling table items, pre-filtering empty parser artifacts.
+
+    Docling can emit table items whose structure model produced no grid at all
+    (0x0, no cells). Those are detected-but-empty artifacts: they are returned
+    separately as ``SkippedTableItem`` and never become table records.
+    """
     tables: list[ParsedTable] = []
+    skipped: list[SkippedTableItem] = []
     for table_item in getattr(document, "tables", []) or []:
         warnings: list[str] = []
         prov = _first_prov(table_item)
@@ -190,6 +199,7 @@ def _build_tables(document: Any) -> list[ParsedTable]:
         cells: list[list[str]] = []
         num_rows = 0
         num_cols = 0
+        grid_error: str | None = None
         try:
             data = table_item.data
             num_rows = int(getattr(data, "num_rows", 0) or 0)
@@ -197,7 +207,21 @@ def _build_tables(document: Any) -> list[ParsedTable]:
             grid = getattr(data, "grid", None) or []
             cells = [[str(getattr(cell, "text", "") or "") for cell in row] for row in grid]
         except Exception as exc:
-            warnings.append(f"table grid extraction failed: {exc}")
+            grid_error = f"table grid extraction failed: {exc}"
+
+        num_rows = num_rows or len(cells)
+        num_cols = num_cols or max((len(r) for r in cells), default=0)
+
+        if grid_error is not None or not table_content_is_valid(num_rows, num_cols, cells):
+            skipped.append(
+                SkippedTableItem(
+                    page_number=page_number,
+                    reference=str(getattr(table_item, "self_ref", None) or "") or None,
+                    extraction_method=PARSER_NAME,
+                    message=grid_error or "docling table item has no rows/columns/cell content",
+                )
+            )
+            continue
 
         caption = None
         try:
@@ -211,13 +235,13 @@ def _build_tables(document: Any) -> list[ParsedTable]:
                 page_number=page_number,
                 bbox=bbox,
                 cells=cells,
-                num_rows=num_rows or len(cells),
-                num_cols=num_cols or max((len(r) for r in cells), default=0),
+                num_rows=num_rows,
+                num_cols=num_cols,
                 caption=caption,
                 warnings=warnings,
             )
         )
-    return tables
+    return tables, skipped
 
 
 def _build_images(document: Any) -> list[ParsedImage]:
@@ -417,13 +441,15 @@ def parse_pdf_docling(
         number for number in candidates if char_counts.get(number, 0) < MIN_USABLE_CHARS_PER_PAGE
     ]
 
+    tables, skipped_tables = _build_tables(document)
     parsed = ParsedDocument(
         parser_name=PARSER_NAME,
         parser_version=version,
         status="success",
         pages=pages,
         sections=_build_sections(document),
-        tables=_build_tables(document),
+        tables=tables,
+        skipped_empty_tables=skipped_tables,
         images=_build_images(document),
         ocr=ocr,
     )
@@ -461,13 +487,15 @@ def parse_docx_docling(path: Path) -> ParsedDocument:
     document = result.document
 
     pages, _ = _build_pages(document, None, set())
+    tables, skipped_tables = _build_tables(document)
     parsed = ParsedDocument(
         parser_name=PARSER_NAME,
         parser_version=parser_version(),
         status="success",
         pages=pages,
         sections=_build_sections(document),
-        tables=_build_tables(document),
+        tables=tables,
+        skipped_empty_tables=skipped_tables,
         images=_build_images(document),
         ocr=OcrOutcome(),
     )

@@ -46,7 +46,11 @@ EXPECTED_COUNTS = {
     "auxiliary_archives": 1,
     "reports": 23,
     "pages": 1075,
-    "tables": 686,
+    # 632 = the independently recomputed valid non-empty table count. The
+    # previous value (686) included 54 empty Sintez Ural parser artifacts that
+    # are no longer serialized after the table validity fix (schema 1.1.0);
+    # they are now empty_table_item_skipped warnings + report counters.
+    "tables": 632,
     "images": 481,
     "physical_images": 481,
     "ocr_pages": 98,

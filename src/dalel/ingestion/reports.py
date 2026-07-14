@@ -40,6 +40,7 @@ class DocumentResult:
     images: int = 0
     sections: int = 0
     ocr_pages: int = 0
+    skipped_empty_tables: int = 0
     warning_count: int = 0
     errors: list[str] = field(default_factory=list)
     output_dir: str | None = None
@@ -181,6 +182,8 @@ def format_batch_summary(batch: BatchResult) -> str:
                 f"pages={result.pages} tables={result.tables}"
                 f" images={result.images} ocr_pages={result.ocr_pages}"
             )
+            if result.skipped_empty_tables:
+                parts.append(f"skipped_empty_tables={result.skipped_empty_tables}")
         if result.errors:
             parts.append(f"errors={len(result.errors)}")
         lines.append("  ".join(parts))

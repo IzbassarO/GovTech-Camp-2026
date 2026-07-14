@@ -14,6 +14,8 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from dalel.config import (
     INGESTION_SCHEMA_VERSION,
     ExtractionStatus,
@@ -22,7 +24,7 @@ from dalel.config import (
 )
 from dalel.ingestion import docling_parser, docx_fallback, pymupdf_fallback
 from dalel.ingestion.hashing import sha256_file
-from dalel.ingestion.parsed import ParsedDocument
+from dalel.ingestion.parsed import ParsedDocument, SkippedTableItem
 from dalel.ingestion.pdf_mode import PdfAnalysis, analyze_pdf
 from dalel.ingestion.reports import (
     BatchResult,
@@ -50,7 +52,7 @@ from dalel.schemas.evidence import Provenance
 from dalel.schemas.image import ImageRecord
 from dalel.schemas.manifest import ManifestDocument, ManifestProject
 from dalel.schemas.page import PageRecord
-from dalel.schemas.table import TableRecord
+from dalel.schemas.table import TableRecord, table_content_is_valid
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +327,9 @@ def _ingest_one(
         pages_processed=len(records.pages),
         ocr_pages=len(parsed.ocr.ocr_pages),
         table_count=len(records.tables),
+        detected_table_items=len(records.tables) + len(records.skipped_table_items),
+        serialized_table_count=len(records.tables),
+        skipped_empty_table_items=len(records.skipped_table_items),
         image_count=len(records.images),
         section_count=len(records.sections),
         warning_count=len(records.document.warnings),
@@ -359,6 +364,7 @@ def _ingest_one(
     result.sections = len(records.sections)
     result.ocr_pages = len(parsed.ocr.ocr_pages)
     result.warning_count = len(records.document.warnings)
+    result.skipped_empty_tables = len(records.skipped_table_items)
     result.errors = list(parsed.errors)
     result.output_dir = _relative_to_root(out_dir, options.repo_root)
     result.elapsed_seconds = round(time.monotonic() - started_monotonic, 3)
@@ -526,6 +532,18 @@ class _DocumentRecords:
     tables: list[TableRecord]
     images: list[ImageRecord]
     image_blobs: dict[str, bytes]
+    skipped_table_items: list[SkippedTableItem]
+
+
+def _format_skipped_table_warning(document_id: str, item: SkippedTableItem) -> str:
+    """One document warning per skipped empty table item; nothing is invented."""
+    page = item.page_number if item.page_number is not None else "null"
+    reference = item.reference if item.reference else "null"
+    return (
+        f"empty_table_item_skipped: document_id={document_id} page={page}"
+        f" ref={reference} method={item.extraction_method} — {item.message};"
+        " detected table item was not serialized as a table record"
+    )
 
 
 def _build_records(
@@ -608,28 +626,56 @@ def _build_records(
             )
         )
 
+    # Table validity contract, applied in three layers: parsers pre-filter
+    # empty items (layer 1), the loop below re-validates whatever a parser
+    # returned (layer 2), and the TableRecord model validator rejects anything
+    # that slips through (layer 3). A rejected item never aborts the document:
+    # it becomes an empty_table_item_skipped warning.
+    skipped_table_items = list(parsed.skipped_empty_tables)
     tables: list[TableRecord] = []
-    for index, parsed_table in enumerate(parsed.tables, start=1):
+    for parsed_table in parsed.tables:
+        if not table_content_is_valid(
+            parsed_table.num_rows, parsed_table.num_cols, parsed_table.cells
+        ):
+            skipped_table_items.append(
+                SkippedTableItem(
+                    page_number=parsed_table.page_number,
+                    reference=None,
+                    extraction_method=base_method,
+                    message="parser returned a table item without rows/columns/cell content",
+                )
+            )
+            continue
         table_warnings = list(parsed_table.warnings)
         if parsed_table.page_number is None:
             table_warnings.append("page number unavailable; not invented")
         if parsed_table.bbox is None:
             table_warnings.append("bbox unavailable; not invented")
-        tables.append(
-            TableRecord(
-                schema_version=INGESTION_SCHEMA_VERSION,
-                table_id=f"{document.document_id}__tab_{index:04d}",
-                page_number=parsed_table.page_number,
-                num_rows=parsed_table.num_rows,
-                num_cols=parsed_table.num_cols,
-                cells=parsed_table.cells,
-                caption=parsed_table.caption,
-                confidence=parsed_table.confidence,
-                confidence_source=parsed_table.confidence_source,
-                warnings=table_warnings,
-                provenance=provenance(parsed_table.page_number, parsed_table.bbox, base_method),
+        try:
+            tables.append(
+                TableRecord(
+                    schema_version=INGESTION_SCHEMA_VERSION,
+                    table_id=f"{document.document_id}__tab_{len(tables) + 1:04d}",
+                    page_number=parsed_table.page_number,
+                    num_rows=parsed_table.num_rows,
+                    num_cols=parsed_table.num_cols,
+                    cells=parsed_table.cells,
+                    caption=parsed_table.caption,
+                    confidence=parsed_table.confidence,
+                    confidence_source=parsed_table.confidence_source,
+                    warnings=table_warnings,
+                    provenance=provenance(parsed_table.page_number, parsed_table.bbox, base_method),
+                )
             )
-        )
+        except ValidationError as exc:
+            skipped_table_items.append(
+                SkippedTableItem(
+                    page_number=parsed_table.page_number,
+                    reference=None,
+                    extraction_method=base_method,
+                    message=f"table record rejected by schema validation: {exc}",
+                )
+            )
 
     images: list[ImageRecord] = []
     image_blobs: dict[str, bytes] = {}
@@ -676,6 +722,9 @@ def _build_records(
     for ocr_warning in parsed.ocr.warnings:
         if ocr_warning not in document_warnings:
             document_warnings.append(ocr_warning)
+    # Every skipped empty table item is surfaced, never silently dropped.
+    for skipped_item in skipped_table_items:
+        document_warnings.append(_format_skipped_table_warning(document.document_id, skipped_item))
     ocr_metadata = OcrMetadata(
         mode=options.ocr_mode.value,
         engine=parsed.ocr.engine,
@@ -726,4 +775,5 @@ def _build_records(
         tables=tables,
         images=images,
         image_blobs=image_blobs,
+        skipped_table_items=skipped_table_items,
     )

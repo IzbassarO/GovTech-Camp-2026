@@ -100,7 +100,12 @@ class IngestionReport(BaseModel):
     fallback_used: bool = False
     pages_processed: int = 0
     ocr_pages: int = 0
+    # ``table_count`` means serialized valid tables only (== serialized_table_count).
     table_count: int = 0
+    # Raw parser-detected table items = serialized + skipped-empty.
+    detected_table_items: int = 0
+    serialized_table_count: int = 0
+    skipped_empty_table_items: int = 0
     image_count: int = 0
     section_count: int = 0
     warning_count: int = 0

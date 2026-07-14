@@ -8,7 +8,11 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-INGESTION_SCHEMA_VERSION = "1.0.0"
+# 1.1.0: table validity contract — empty parser table items are no longer
+# serialized as table records; ingestion reports gained detected/serialized/
+# skipped table counters. The version participates in the cache key, so the
+# bump reproducibly invalidates all pre-1.1.0 outputs without manual --force.
+INGESTION_SCHEMA_VERSION = "1.1.0"
 
 # Document types confirmed by the dataset pre-flight audit. Do not shrink.
 ALLOWED_DOCUMENT_TYPES: frozenset[str] = frozenset(
