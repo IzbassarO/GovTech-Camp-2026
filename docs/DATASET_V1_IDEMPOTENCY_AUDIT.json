@@ -1,0 +1,27 @@
+{
+  "audit": "Dataset v1 byte-idempotency: two independent temporary builds from identical upstream inputs",
+  "fingerprint_algorithm": "dalel-input-inventory/v2",
+  "fingerprint_semantics": "explicit upstream input inventory (manifest, processed model inputs incl. image bytes, label-source table gate, original weak findings, source metadata); downstream artifacts (data/curated, data/results, p1_review_template) excluded by construction",
+  "input_inventory_count": 584,
+  "input_roles": {
+    "canonical_manifest": 1,
+    "label_source_table_gate": 4,
+    "processed_document": 114,
+    "processed_image": 460,
+    "source_metadata": 4,
+    "weak_findings": 1
+  },
+  "input_fingerprint": "772694f42bbf22dd5d649c7eb0d79e8cc73b9e8c2e9b0eae8790633c9dd57051",
+  "fingerprint_build_a": "772694f42bbf22dd5d649c7eb0d79e8cc73b9e8c2e9b0eae8790633c9dd57051",
+  "fingerprint_build_b": "772694f42bbf22dd5d649c7eb0d79e8cc73b9e8c2e9b0eae8790633c9dd57051",
+  "fingerprint_before_p1": "772694f42bbf22dd5d649c7eb0d79e8cc73b9e8c2e9b0eae8790633c9dd57051",
+  "fingerprint_after_p1": "772694f42bbf22dd5d649c7eb0d79e8cc73b9e8c2e9b0eae8790633c9dd57051",
+  "fingerprint_equality_across_builds_and_p1": true,
+  "build_a_files": 475,
+  "build_b_files": 475,
+  "compared_files": 475,
+  "files_only_in_one_build": [],
+  "sha256_mismatches": [],
+  "production_dataset_matches_temp_builds": true,
+  "final_result": "IDENTICAL"
+}

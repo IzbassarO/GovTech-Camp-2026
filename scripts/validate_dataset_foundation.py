@@ -437,23 +437,37 @@ class Validator:
                         if self.sha256(path) != expected_hash:
                             self.error(f"{context}: SHA-256 mismatch: {relative_path}")
 
-        # data/processed holds derived Phase 0 ingestion outputs; the audited
-        # inventory covers only the immutable dataset foundation beneath data/.
-        processed_prefix = (DATA / "processed").resolve()
+        # Derived pipeline outputs live under data/ but are not part of the
+        # immutable dataset foundation covered by the audited inventory:
+        # data/processed (Phase 0 ingestion), data/curated (Phase 0.5 dataset),
+        # data/results (pillar outputs) and the generated expert-review
+        # template. Raw files, manifests, source metadata and original
+        # annotations remain fully covered.
+        derived_prefixes = [
+            (DATA / "processed").resolve(),
+            (DATA / "curated").resolve(),
+            (DATA / "results").resolve(),
+        ]
+        derived_files = {(DATA / "annotations" / "p1_review_template.jsonl").resolve()}
 
-        def _is_processed(path: Path) -> bool:
-            try:
-                path.resolve().relative_to(processed_prefix)
+        def _is_derived(path: Path) -> bool:
+            resolved = path.resolve()
+            if resolved in derived_files:
                 return True
-            except ValueError:
-                return False
+            for prefix in derived_prefixes:
+                try:
+                    resolved.relative_to(prefix)
+                    return True
+                except ValueError:
+                    continue
+            return False
 
         expected_paths = {
             path.relative_to(ROOT).as_posix()
             for path in DATA.rglob("*")
             if path.is_file()
             and path.resolve() != FILE_INVENTORY.resolve()
-            and not _is_processed(path)
+            and not _is_derived(path)
         }
         missing = sorted(expected_paths - seen_paths)
         extra = sorted(seen_paths - expected_paths - volatile_paths)

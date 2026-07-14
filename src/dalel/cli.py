@@ -242,6 +242,123 @@ def ingest_command(
     raise typer.Exit(code=0 if batch.ok else 1)
 
 
+@app.command("curate")
+def curate_command(
+    input_root: Annotated[
+        Path, typer.Option("--input", help="Processed corpus root (read-only).")
+    ] = Path("data/processed"),
+    output_dir: Annotated[
+        Path, typer.Option("--output", help="Curated dataset output directory.")
+    ] = Path("data/curated/v1"),
+    manifest: ManifestOption = DEFAULT_MANIFEST,
+    force: Annotated[
+        bool, typer.Option("--force", help="Atomically replace an existing dataset.")
+    ] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Build Curated Dataset v1 from the processed corpus (Phase 0.5)."""
+    _setup_logging(verbose)
+    from dalel.curation.builder import (
+        CuratedBuildError,
+        CurateOptions,
+        build_curated_dataset,
+    )
+
+    repo_root = derive_repo_root(manifest)
+    options = CurateOptions(
+        input_root=input_root,
+        output_dir=output_dir,
+        repo_root=repo_root,
+        manifest_path=manifest,
+        annotations_root=repo_root / "data" / "annotations",
+        force=force,
+    )
+    try:
+        result = build_curated_dataset(options)
+    except CuratedBuildError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    for error in result.errors:
+        typer.secho(f"ERROR: {error}", fg=typer.colors.RED)
+    typer.echo(f"Build status: {result.status}")
+    typer.echo(f"Counts: {result.counts}")
+    if result.report_path is not None:
+        typer.echo(f"Build report: {result.report_path}")
+    raise typer.Exit(code=0 if result.status == "success" else 1)
+
+
+@app.command("validate-curated")
+def validate_curated_command(
+    dataset: Annotated[Path, typer.Option("--dataset", help="Curated dataset directory.")] = Path(
+        "data/curated/v1"
+    ),
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Validate a built curated dataset (structure, counts, leakage, checksums)."""
+    _setup_logging(verbose)
+    from dalel.curation.validation import validate_curated_dataset
+
+    repo_root = dataset.resolve().parents[2] if len(dataset.resolve().parents) >= 3 else Path.cwd()
+    result = validate_curated_dataset(dataset, repo_root)
+    for error in result.errors:
+        typer.secho(f"ERROR: {error}", fg=typer.colors.RED)
+    for warning in result.warnings:
+        typer.secho(f"WARNING: {warning}", fg=typer.colors.YELLOW)
+    typer.echo(f"Counts: {result.counts}")
+    typer.echo(f"Errors: {len(result.errors)}")
+    typer.echo(f"Curated dataset status: {'VALID' if result.ok else 'INVALID'}")
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
+@app.command("run-p1")
+def run_p1_command(
+    dataset: Annotated[
+        Path, typer.Option("--dataset", help="Curated dataset directory (read-only).")
+    ] = Path("data/curated/v1"),
+    output: Annotated[Path, typer.Option("--output", help="P1 results output directory.")] = Path(
+        "data/results/p1/v1"
+    ),
+    project_id: Annotated[
+        str | None, typer.Option("--project-id", help="Analyze only this project.")
+    ] = None,
+    document_id: Annotated[
+        str | None, typer.Option("--document-id", help="Analyze only this document.")
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Run the P1 Document Integrity deterministic baseline (no LLM)."""
+    _setup_logging(verbose)
+    from dalel.pillars.document_integrity.pipeline import P1Options, P1RunError, run_p1
+
+    repo_root = dataset.resolve().parents[2] if len(dataset.resolve().parents) >= 3 else Path.cwd()
+    options = P1Options(
+        dataset_dir=dataset,
+        output_dir=output,
+        annotations_root=repo_root / "data" / "annotations",
+        project_id=project_id,
+        document_id=document_id,
+    )
+    try:
+        result = run_p1(options)
+    except P1RunError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        f"P1 complete: documents={result.metrics['documents_analyzed']}"
+        f" findings={result.metrics['findings_total']}"
+        f" by_severity={result.metrics['findings_by_severity']}"
+    )
+    if result.review_template_created:
+        typer.echo(f"Review template created: {result.review_template_path}")
+    else:
+        typer.echo(
+            f"Review template already exists (not overwritten): {result.review_template_path}"
+        )
+    typer.echo(f"Outputs: {output}")
+
+
 def main() -> None:
     app()
 
