@@ -441,14 +441,17 @@ class Validator:
         # immutable dataset foundation covered by the audited inventory:
         # data/processed (Phase 0 ingestion), data/curated (Phase 0.5 dataset),
         # data/results (pillar outputs) and the generated expert-review
-        # template. Raw files, manifests, source metadata and original
-        # annotations remain fully covered.
+        # templates (P1, P3). Raw files, manifests, source metadata and
+        # original annotations remain fully covered.
         derived_prefixes = [
             (DATA / "processed").resolve(),
             (DATA / "curated").resolve(),
             (DATA / "results").resolve(),
         ]
-        derived_files = {(DATA / "annotations" / "p1_review_template.jsonl").resolve()}
+        derived_files = {
+            (DATA / "annotations" / "p1_review_template.jsonl").resolve(),
+            (DATA / "annotations" / "p3_review_template.jsonl").resolve(),
+        }
 
         def _is_derived(path: Path) -> bool:
             resolved = path.resolve()
