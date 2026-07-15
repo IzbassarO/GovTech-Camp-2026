@@ -1,0 +1,49 @@
+# Keep the Docker build context small and free of secrets, dev caches and
+# accepted analysis output (context is the repository root).
+
+# --- Environment files / secrets (never into an image layer) ---
+.env
+.env.*
+**/.env
+**/.env.*
+frontend/.env
+frontend/.env.*
+# ...but keep the committed example that documents configuration.
+!.env.example
+!**/.env.example
+!frontend/.env.example
+
+# --- Node / Next.js ---
+node_modules
+**/node_modules
+.next
+**/.next
+frontend/out
+frontend/build
+
+# --- Python / VCS / caches ---
+.git
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.cache
+
+# --- Accepted analysis output & curated data (mounted at runtime, not baked) ---
+data/raw
+data/processed
+data/manifests
+data/results
+data/curated
+data/annotations
+
+# --- Local documents (source PDFs/DOCX must not enter a public image) ---
+docs
+docs/*.pdf
+docs/*.docx
+
+# --- OS junk ---
+.DS_Store
+**/.DS_Store

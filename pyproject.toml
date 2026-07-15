@@ -13,6 +13,7 @@ dependencies = [
     "typer>=0.12",
     "pydantic>=2.7",
     "rich>=13.7",
+    "jsonschema>=4.21",
 ]
 
 [project.scripts]
@@ -24,6 +25,16 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+# Demo website API layer (src/dalel/api). Kept in its own group so the
+# core ingestion/pillar package has no web dependency; installed by
+# default for developer convenience via [tool.uv] default-groups below.
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+]
+
+[tool.uv]
+default-groups = ["dev", "api"]
 
 [build-system]
 requires = ["hatchling"]
@@ -51,6 +62,11 @@ extend-exclude = ["notebooks", "scripts"]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 ignore = [
     "SIM108", # ternary is not always clearer
+    # Russian-language user-facing strings (findings, taxonomy, reports) are
+    # first-class in this project; Cyrillic confusable warnings are noise.
+    "RUF001",
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.mypy]
@@ -75,6 +91,8 @@ module = [
     "docx.*",
     "docling.*",
     "docling_core.*",
+    "jsonschema",
+    "jsonschema.*",
     "easyocr",
     "PIL",
     "PIL.*",

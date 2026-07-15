@@ -1,0 +1,30 @@
+# Demo stack: read-only API + Next.js frontend. No database, no secrets.
+#
+#   docker compose -f deploy/docker-compose.demo.yml up --build
+#
+# Then open http://localhost:3000
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    environment:
+      DALEL_API_CORS_ORIGINS: http://localhost:3000
+    # Accepted, read-only artifacts are mounted (never baked into the image).
+    volumes:
+      - ../data/curated:/app/data/curated:ro
+      - ../data/results:/app/data/results:ro
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+      args:
+        # The browser reaches the API on the host-published port.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
