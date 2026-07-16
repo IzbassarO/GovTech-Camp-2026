@@ -1,4 +1,4 @@
-import { CheckCircle2, FileText, Scale, Sigma } from "lucide-react";
+import { CheckCircle2, FileText, Network, Scale, Sigma } from "lucide-react";
 
 import type { PillarSummary } from "@/lib/types";
 import { DemoBanner, StatusPill } from "@/components/primitives";
@@ -7,6 +7,7 @@ const PILLAR_ICON: Record<string, typeof FileText> = {
   p1: FileText,
   p2: Scale,
   p3: Sigma,
+  p4: Network,
 };
 
 export function PillarCard({

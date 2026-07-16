@@ -538,6 +538,106 @@ def run_p2_command(
             raise typer.Exit(code=1)
 
 
+@app.command("run-p4")
+def run_p4_command(
+    dataset: Annotated[
+        Path, typer.Option("--dataset", help="Curated dataset directory (read-only).")
+    ] = Path("data/curated/v1"),
+    output: Annotated[Path, typer.Option("--output", help="P4 results output directory.")] = Path(
+        "data/results/p4/v1"
+    ),
+    project_id: Annotated[
+        str | None, typer.Option("--project-id", help="Analyze only this project.")
+    ] = None,
+    document_id: Annotated[
+        str | None, typer.Option("--document-id", help="Analyze only this document.")
+    ] = None,
+    fail_on: Annotated[
+        str | None,
+        typer.Option(
+            "--fail-on",
+            help="Exit nonzero when findings at or above this severity exist"
+            " (info, low, medium or high).",
+        ),
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Run P4 Cross-Document Coherence and Entity Graph (deterministic, no LLM)."""
+    _setup_logging(verbose)
+    import time
+
+    from dalel.pillars.cross_document_coherence.pipeline import (
+        P4Options,
+        P4RunError,
+        run_p4,
+    )
+    from dalel.pillars.cross_document_coherence.reports import summarize_for_cli
+
+    if fail_on is not None and fail_on not in _SEVERITY_RANK:
+        typer.secho(
+            f"ERROR: --fail-on must be one of {', '.join(_SEVERITY_RANK)}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    repo_root = dataset.resolve().parents[2] if len(dataset.resolve().parents) >= 3 else Path.cwd()
+    options = P4Options(
+        dataset_dir=dataset,
+        output_dir=output,
+        annotations_root=repo_root / "data" / "annotations",
+        project_id=project_id,
+        document_id=document_id,
+    )
+    started = time.monotonic()
+    try:
+        result = run_p4(options)
+    except P4RunError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(summarize_for_cli(result.metrics))
+    typer.echo(f"Elapsed: {time.monotonic() - started:.1f}s")
+    if result.review_template_created:
+        typer.echo(f"Review template created: {result.review_template_path}")
+    else:
+        typer.echo(f"Review template updated (human decisions kept): {result.review_template_path}")
+    typer.echo(f"Outputs: {output}")
+
+    if fail_on is not None:
+        threshold = _SEVERITY_RANK[fail_on]
+        hits = sum(1 for f in result.findings if _SEVERITY_RANK.get(f.severity, -1) >= threshold)
+        if hits:
+            typer.secho(
+                f"FAIL-ON: {hits} finding(s) at severity >= {fail_on}", fg=typer.colors.YELLOW
+            )
+            raise typer.Exit(code=1)
+
+
+@app.command("validate-p4")
+def validate_p4_command(
+    dataset: Annotated[
+        Path, typer.Option("--dataset", help="Curated dataset directory (read-only).")
+    ] = Path("data/curated/v1"),
+    output: Annotated[Path, typer.Option("--output", help="P4 results directory.")] = Path(
+        "data/results/p4/v1"
+    ),
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Validate P4 outputs: schemas, IDs, references, grounding, recomputation."""
+    _setup_logging(verbose)
+    from dalel.pillars.cross_document_coherence.validation import validate_p4_outputs
+
+    result = validate_p4_outputs(dataset, output)
+    for error in result.errors:
+        typer.secho(f"ERROR: {error}", fg=typer.colors.RED)
+    for warning in result.warnings:
+        typer.secho(f"WARNING: {warning}", fg=typer.colors.YELLOW)
+    typer.echo(f"Counts: {result.counts}")
+    typer.echo(f"Errors: {len(result.errors)}")
+    typer.echo(f"P4 outputs status: {'VALID' if result.ok else 'INVALID'}")
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
 @app.command("validate-p2")
 def validate_p2_command(
     dataset: Annotated[

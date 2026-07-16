@@ -5,7 +5,7 @@ import type { ProjectListItem } from "@/lib/types";
 import { documentsWord, findingsWord } from "@/lib/ui";
 import { SeverityBar } from "@/components/primitives";
 
-const PILLAR_SHORT: Record<string, string> = { p1: "P1", p2: "P2", p3: "P3" };
+const PILLAR_SHORT: Record<string, string> = { p1: "P1", p2: "P2", p3: "P3", p4: "P4" };
 
 export function ProjectCard({ project }: { project: ProjectListItem }) {
   return (

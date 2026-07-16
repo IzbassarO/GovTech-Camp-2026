@@ -66,11 +66,21 @@ class PillarSummary(BaseModel):
     limitations: str | None = None
     metrics: list[MetricItem] = Field(default_factory=list)
 
+    # --- P4 cross-document coherence: populated only when P4 is available ---
+    entity_count: int | None = None
+    edge_count: int | None = None
+    linked_document_count: int | None = None
+    unresolved_entity_count: int | None = None
+    suppressed_comparison_count: int | None = None
+
     # --- reserved for future pillars; never fabricated ---
     calibrated_risk: float | None = None
     model_score: float | None = None
     shap_contributions: list[dict[str, float]] | None = None
+    # P4 populates ``graph`` with a compact cross-document coherence summary
+    # (entities, relationships, confirmed links, suppressed comparisons).
     graph: dict[str, object] | None = None
+    # ``map`` stays reserved for the later spatial/cartographic phase (P5/P6).
     map: dict[str, object] | None = None
     provider: dict[str, str] | None = None
 
@@ -190,6 +200,39 @@ class QuantitativeDetail(BaseModel):
     canonical_unit: str | None = None
 
 
+class EntityRef(BaseModel):
+    """P4 entity referenced by a finding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_id: str
+    entity_type: str
+    label: str
+    role: str | None = None
+    identifiers: list[str] = Field(default_factory=list)
+
+
+class ConflictingClaimRef(BaseModel):
+    """One side of an evidence-backed P4 cross-document mismatch."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str
+    document_type: str | None = None
+    attribute: str
+    raw_value: str
+    normalized_value: str
+
+
+class CoherenceDetail(BaseModel):
+    """P4 cross-document coherence context attached to a finding detail."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entities: list[EntityRef] = Field(default_factory=list)
+    conflicting_claims: list[ConflictingClaimRef] = Field(default_factory=list)
+
+
 class FindingListItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -228,6 +271,7 @@ class FindingDetail(FindingListItem):
     inference_engine: str | None = None
     requirement: RequirementRef | None = None
     quantitative: QuantitativeDetail | None = None
+    coherence: CoherenceDetail | None = None
     demo_warning: str | None = None
     review_notice: str
 

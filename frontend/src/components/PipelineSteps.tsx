@@ -6,6 +6,7 @@ const STEPS = [
   { id: "P1", label: "Целостность", caption: "Структура пакета" },
   { id: "P3", label: "Согласованность", caption: "Числовые проверки" },
   { id: "P2", label: "Соответствие", caption: "Демо-корпус" },
+  { id: "P4", label: "Междокументная", caption: "Граф сущностей" },
 ];
 
 export function PipelineSteps() {
@@ -43,9 +44,9 @@ export function PipelineSteps() {
             </span>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                P4 · Meta
+                P5 · META
               </p>
-              <p className="text-sm font-medium text-slate-500">Интегральный риск</p>
+              <p className="text-sm font-medium text-slate-500">Гео и интегральный риск</p>
               <p className="text-xs text-slate-400">Следующий этап</p>
             </div>
           </div>

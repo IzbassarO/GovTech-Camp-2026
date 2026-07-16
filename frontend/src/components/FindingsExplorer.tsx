@@ -19,14 +19,18 @@ const PILLAR_LABEL: Record<string, string> = {
   p1: "P1 · Целостность",
   p2: "P2 · Соответствие",
   p3: "P3 · Согласованность",
+  p4: "P4 · Междокументная",
 };
 
 // Stable fallback list of implemented pillars, used until the API filter
-// list arrives so P3 never disappears from the dropdown mid-load.
-const IMPLEMENTED_PILLARS = ["p1", "p2", "p3"];
+// list arrives so P3/P4 never disappear from the dropdown mid-load.
+const IMPLEMENTED_PILLARS = ["p1", "p2", "p3", "p4"];
 
 const P3_EMPTY_TITLE = "Доказанных числовых противоречий не обнаружено.";
 const P3_EMPTY_HINT = "Сравнения с недостаточным контекстом были исключены из выводов.";
+const P4_EMPTY_TITLE = "Доказанных междокументных противоречий не обнаружено.";
+const P4_EMPTY_HINT =
+  "Сопоставления с недостаточной идентичностью или контекстом были исключены из выводов.";
 
 export function FindingsExplorer({
   projectId,
@@ -133,6 +137,8 @@ export function FindingsExplorer({
         data.findings.length === 0 ? (
           pillar === "p3" ? (
             <EmptyState title={P3_EMPTY_TITLE} hint={P3_EMPTY_HINT} />
+          ) : pillar === "p4" ? (
+            <EmptyState title={P4_EMPTY_TITLE} hint={P4_EMPTY_HINT} />
           ) : (
             <EmptyState
               title="Замечаний по выбранным фильтрам нет"

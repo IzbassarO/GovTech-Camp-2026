@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FileText, Scale, Sigma } from "lucide-react";
+import { FileText, Network, Scale, Sigma } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Методология — Dalel",
@@ -43,7 +43,7 @@ export default function MethodologyPage() {
         </Block>
         <Block title="Детерминированность">
           <p>
-            Пиллары P1 и P3 полностью детерминированы: одинаковый вход даёт
+            Пиллары P1, P3 и P4 полностью детерминированы: одинаковый вход даёт
             байт-в-байт одинаковый результат, без обращения к внешним сервисам,
             эмбеддингам или OCR на этапе анализа.
           </p>
@@ -120,14 +120,36 @@ export default function MethodologyPage() {
             </p>
           </div>
         </div>
+
+        <div className="flex items-start gap-4 rounded-xl border border-slate-200 bg-white p-5">
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-navy-900 text-white">
+            <Network className="h-5 w-5" aria-hidden />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              P4 · Междокументная согласованность
+            </h3>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">
+              Сопоставляет сведения о проекте, объектах, местоположении,
+              деятельности и периодах между документами пакета и строит граф
+              сущностей с сохранением провенанса. Конфликт поднимается только при
+              явном несовместимом идентификаторе (например, разные БИН оператора);
+              различия написания, кавычек и транслитерации считаются алиасами, а
+              не противоречиями. Сопоставления с неустановленной идентичностью или
+              недостаточным контекстом исключаются из выводов. Это не
+              пространственный и не картографический анализ.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6">
         <h2 className="text-base font-semibold text-slate-700">Следующие этапы</h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-500">
-          Пространственно-картографический анализ (P4) и интегральная оценка
-          риска на основе всех пилларов — в разработке. Сейчас сводная
-          калиброванная оценка риска не рассчитывается и не отображается.
+          Пространственный и картографический анализ (геопривязка объектов и зон
+          воздействия) и интегральная оценка риска на основе всех пилларов — в
+          разработке (P5/P6, META). Сейчас сводная калиброванная оценка риска не
+          рассчитывается и не отображается.
         </p>
       </div>
     </div>

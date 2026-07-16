@@ -18,6 +18,7 @@ import { PillarCard } from "@/components/PillarCard";
 import { FindingsExplorer } from "@/components/FindingsExplorer";
 import { ReportModal } from "@/components/ReportModal";
 import { DocumentsTable } from "@/components/DocumentsTable";
+import { CoherenceView } from "@/components/CoherenceView";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -111,14 +112,15 @@ export default function ProjectDetailPage() {
         description="Каждый пиллар оценивает отдельный аспект. Интегральная оценка не рассчитывается."
       >
         {summary.loading || !s ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
             <SkeletonCard />
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {s.pillars.map((pillar) => (
                 <PillarCard key={pillar.key} pillar={pillar} onOpenFindings={openFindings} />
               ))}
@@ -140,6 +142,8 @@ export default function ProjectDetailPage() {
           </>
         )}
       </Section>
+
+      {s ? <P4Section pillars={s.pillars} /> : null}
 
       <div ref={findingsRef} className="scroll-mt-20">
         <Section
@@ -174,7 +178,7 @@ export default function ProjectDetailPage() {
 
       {s ? (
         <Section title="Отчёты и ограничения">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {s.pillars.map((pillar) => (
               <div key={pillar.key} className="card flex flex-col p-5">
                 <p className="text-sm font-semibold text-slate-900">{pillar.title}</p>
@@ -228,5 +232,18 @@ function BackLink() {
       <ArrowLeft className="h-4 w-4" aria-hidden />
       Все проекты
     </Link>
+  );
+}
+
+function P4Section({ pillars }: { pillars: ProjectSummary["pillars"] }) {
+  const p4 = pillars.find((p) => p.key === "p4");
+  if (!p4 || !p4.available) return null;
+  return (
+    <Section
+      title="P4 · Междокументная согласованность"
+      description="Сопоставляет сведения о проекте, объектах, местоположении, деятельности и периодах между документами. Различия написания и транслитерации считаются алиасами, а не противоречиями."
+    >
+      <CoherenceView pillar={p4} />
+    </Section>
   );
 }

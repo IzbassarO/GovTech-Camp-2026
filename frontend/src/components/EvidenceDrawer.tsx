@@ -165,6 +165,44 @@ function DrawerBody({ finding }: { finding: FindingDetail }) {
         </Field>
       ) : null}
 
+      {finding.coherence && finding.coherence.entities.length > 0 ? (
+        <Field label="Связанные сущности">
+          <ul className="space-y-1.5">
+            {finding.coherence.entities.map((e) => (
+              <li key={e.entity_id} className="flex flex-wrap items-center gap-2">
+                {e.role ? (
+                  <span className="chip bg-slate-100 text-slate-600">{e.role}</span>
+                ) : null}
+                <span className="font-medium text-slate-800">{e.label}</span>
+                {e.identifiers.map((id) => (
+                  <span key={id} className="chip bg-navy-900 text-white">
+                    БИН {id}
+                  </span>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </Field>
+      ) : null}
+
+      {finding.coherence && finding.coherence.conflicting_claims.length > 0 ? (
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Противоречащие сведения по документам
+          </p>
+          <ul className="mt-2 space-y-2">
+            {finding.coherence.conflicting_claims.map((c, i) => (
+              <li key={i} className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
+                <p className="font-medium text-slate-800">«{c.raw_value}»</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {c.document_type ?? c.document_id} · {c.attribute}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {finding.evidence.length > 0 ? (
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">

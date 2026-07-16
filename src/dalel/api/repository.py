@@ -49,6 +49,12 @@ class PillarArtifacts:
     assessments_by_project: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # P3 per-project aggregate stats (empty for other pillars):
     p3_project_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    # P4 entity-graph artifacts grouped per project (empty for other pillars):
+    p4_entities_by_project: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    p4_edges_by_project: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    p4_resolution_by_project: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    p4_suppressed_by_project: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    p4_entities_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     report_markdown: str = ""
 
 
@@ -128,7 +134,24 @@ def _load_pillar(descriptor: PillarDescriptor, results_dir: Path) -> PillarArtif
             )
     if descriptor.key == "p3":
         artifacts.p3_project_stats = _p3_project_stats(base)
+    if descriptor.key == "p4":
+        _load_p4_graph(artifacts, base)
     return artifacts
+
+
+def _load_p4_graph(artifacts: PillarArtifacts, base: Path) -> None:
+    """Load P4 entity-graph artifacts, grouped per project for the coherence
+    view. Absent files degrade to empty (P4 simply stays unavailable)."""
+    for record in _read_jsonl(base / "entities.jsonl"):
+        project_id = str(record["project_id"])
+        artifacts.p4_entities_by_project.setdefault(project_id, []).append(record)
+        artifacts.p4_entities_by_id[str(record["entity_id"])] = record
+    for record in _read_jsonl(base / "edges.jsonl"):
+        artifacts.p4_edges_by_project.setdefault(str(record["project_id"]), []).append(record)
+    for record in _read_jsonl(base / "resolution_decisions.jsonl"):
+        artifacts.p4_resolution_by_project.setdefault(str(record["project_id"]), []).append(record)
+    for record in _read_jsonl(base / "suppressed_comparisons.jsonl"):
+        artifacts.p4_suppressed_by_project.setdefault(str(record["project_id"]), []).append(record)
 
 
 def _p3_project_stats(base: Path) -> dict[str, dict[str, int]]:

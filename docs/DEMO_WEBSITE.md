@@ -1,13 +1,22 @@
 # Demo Website — BizAI / Dalel
 
 A read-only demo site visualizing the accepted analysis results
-(P1 / P2 / P3) over the curated dataset. It re-runs nothing: it normalizes
-the on-disk artifacts into a stable API and renders them.
+(P1 / P2 / P3 / P4) over the curated dataset. It re-runs nothing: it
+normalizes the on-disk artifacts into a stable API and renders them.
+
+**P4 · Cross-Document Coherence and Entity Graph** is implemented: it checks
+whether the documents in one project package describe the same project,
+operator, facility, location, activity and reporting context consistently, and
+builds a provenance-preserving entity graph. P4 is deterministic and is NOT a
+spatial, visual or geospatial analysis — those belong to the later P5/P6 phases
+(integrated meta-risk is a future META step). The accepted production corpus
+yields zero *proven* cross-document contradictions; this is the honest,
+conservative result and never a claim that the documents are correct.
 
 ## Architecture
 
 ```
-data/curated/v1, data/results/{p1,p2,p3}/v1   (accepted artifacts, read-only)
+data/curated/v1, data/results/{p1,p2,p3,p4}/v1   (accepted artifacts, read-only)
         │
         ▼
 src/dalel/api/            FastAPI (offline, no DB, no LLM)
@@ -20,11 +29,11 @@ frontend/                 Next.js 15 App Router (TypeScript, Tailwind)
   never reads files directly — only the API
 ```
 
-Future pillars (P4/P5/P6, integrated meta-risk) plug in at the **service
-layer** via the generic `PillarSummary` contract without changing the API
-shape or the frontend. Reserved fields (`calibrated_risk`, `model_score`,
-`shap_contributions`, `graph`, `map`, `provider`) exist in the contract as
-`null` and are never fabricated.
+Future pillars (P5/P6 spatial & geospatial analysis, integrated meta-risk) plug
+in at the **service layer** via the generic `PillarSummary` contract without
+changing the API shape or the frontend. Reserved fields (`calibrated_risk`,
+`model_score`, `shap_contributions`, `map`, `provider`) exist in the contract as
+`null` and are never fabricated; P4 populates `graph` with its coherence view.
 
 ## API endpoints
 

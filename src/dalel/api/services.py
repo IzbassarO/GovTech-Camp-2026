@@ -13,7 +13,10 @@ from dalel.api import API_VERSION
 from dalel.api.config import RESERVED_PILLARS
 from dalel.api.repository import ArtifactStore, PillarArtifacts
 from dalel.api.schemas import (
+    CoherenceDetail,
+    ConflictingClaimRef,
     DocumentInfo,
+    EntityRef,
     EvidenceItem,
     FilterOption,
     FindingDetail,
@@ -44,6 +47,10 @@ REVIEW_NOTICE = (
 )
 P3_EMPTY_STATE = "Доказанных числовых противоречий не обнаружено."
 P3_EXCLUSION_NOTE = "Сравнения с недостаточным контекстом были исключены из выводов."
+P4_EMPTY_STATE = "Доказанных междокументных противоречий не обнаружено."
+P4_EXCLUSION_NOTE = (
+    "Сопоставления с недостаточной идентичностью или контекстом были исключены из выводов."
+)
 INTEGRATED_RISK_NOTE = (
     "Интегральный риск — следующий этап. Сейчас сводная оценка не рассчитывается."
 )
@@ -108,6 +115,55 @@ _FINDING_TYPE_LABELS = {
     "ambiguous_numeric_format": "Неоднозначный числовой формат",
     "insufficient_context": "Недостаточный контекст",
     "unsupported_conversion": "Неподдерживаемое преобразование",
+    # P4
+    "conflicting_project_identity": "Противоречие идентичности проекта",
+    "conflicting_facility_identity": "Противоречие идентичности объекта",
+    "conflicting_location": "Противоречие местоположения",
+    "conflicting_activity_or_category": "Противоречие вида деятельности",
+    "conflicting_reporting_period": "Противоречие отчётного периода",
+    "conflicting_operator": "Противоречие идентификатора оператора",
+    "unresolved_entity_identity": "Идентичность не разрешена",
+    "insufficient_cross_document_context": "Недостаточно контекста для сравнения",
+    "orphan_document_reference": "Ссылка на отсутствующий документ",
+}
+
+# P4 finding types that assert a PROVEN cross-document incompatibility (vs a
+# diagnostic about missing linkage). Drives the honest empty state.
+_P4_CONFLICT_TYPES = frozenset(
+    {
+        "conflicting_project_identity",
+        "conflicting_facility_identity",
+        "conflicting_location",
+        "conflicting_activity_or_category",
+        "conflicting_reporting_period",
+        "conflicting_operator",
+    }
+)
+
+_P4_ENTITY_TYPE_LABELS = {
+    "organization": "Организация",
+    "reporting_period": "Отчётный период",
+    "administrative_location": "Местоположение",
+    "activity": "Деятельность",
+    "emission_source": "Источник выброса",
+    "facility": "Объект",
+    "project": "Проект",
+    "document": "Документ",
+}
+
+_P4_ROLE_LABELS = {"operator": "оператор", "designer": "разработчик", "unknown": "—"}
+
+_P4_RELATION_LABELS = {
+    "project_contains_document": "содержит документ",
+    "document_identifies_operator": "указывает оператора",
+    "document_names_designer": "называет разработчика",
+    "document_names_organization": "упоминает организацию",
+    "document_covers_period": "охватывает период",
+    "document_states_location": "указывает адрес",
+    "document_describes_activity": "описывает деятельность",
+    "document_describes_emission_source": "описывает источник выброса",
+    "project_located_in": "расположен в регионе",
+    "project_performs_activity": "вид деятельности",
 }
 
 _SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "info": 3}
@@ -230,6 +286,22 @@ def _pillar_metrics(
                 hint=P3_EXCLUSION_NOTE,
             ),
         ]
+    if key == "p4":
+        score = pillar.project_scores.get(project_id, {})
+        return [
+            MetricItem(label="Сущностей графа", value=str(score.get("entity_count", 0))),
+            MetricItem(
+                label="Связанных документов",
+                value=str(score.get("linked_document_count", 0)),
+                hint="Подтверждённые межкументные связи (общий БИН/название/период)",
+            ),
+            MetricItem(label="Связей в графе", value=str(score.get("edge_count", 0))),
+            MetricItem(
+                label="Исключено сравнений",
+                value=str(score.get("suppressed_comparison_count", 0)),
+                hint=P4_EXCLUSION_NOTE,
+            ),
+        ]
     return []
 
 
@@ -288,6 +360,35 @@ def build_pillar_summary(
             "Наблюдения о структуре документов, а не административные"
             " выводы; формулировки заголовков и OCR-шум влияют на полноту."
         )
+    elif descriptor.key == "p4":
+        limitations = (
+            "Конфликт поднимается только из явного несовместимого"
+            " идентификатора; различия написания и транслитерации — алиасы, а"
+            " не противоречия. Отсутствие доказанных противоречий не"
+            " подтверждает корректность документов."
+        )
+
+    headline = _pillar_headline(pillar, counts, pillar.available)
+    empty_state = _pillar_empty_state(pillar, counts)
+
+    # P4-specific fields (only when the pillar is available).
+    p4_fields: dict[str, object] = {}
+    if descriptor.key == "p4" and pillar.available:
+        proven = sum(
+            1 for f in project_findings if str(f.get("finding_type")) in _P4_CONFLICT_TYPES
+        )
+        headline = _p4_headline(counts.total, proven)
+        empty_state = f"{P4_EMPTY_STATE} {P4_EXCLUSION_NOTE}" if proven == 0 else None
+        score = pillar.project_scores.get(project_id, {})
+        p4_fields = {
+            "entity_count": int(score.get("entity_count", 0)),
+            "edge_count": int(score.get("edge_count", 0)),
+            "linked_document_count": int(score.get("linked_document_count", 0)),
+            "unresolved_entity_count": int(score.get("unresolved_entity_count", 0)),
+            "suppressed_comparison_count": int(score.get("suppressed_comparison_count", 0)),
+            "graph": _p4_graph_summary(store, pillar, project_id, proven),
+        }
+
     return PillarSummary(
         pillar_id=descriptor.pillar_id,
         key=descriptor.key,
@@ -303,12 +404,139 @@ def build_pillar_summary(
         severity_counts=counts,
         score=_score_for(pillar, project_id),
         score_label=descriptor.score_label,
-        headline=_pillar_headline(pillar, counts, pillar.available),
-        empty_state=_pillar_empty_state(pillar, counts),
+        headline=headline,
+        empty_state=empty_state,
         warning=warning,
         limitations=limitations,
         metrics=_pillar_metrics(store, pillar, project_id, counts),
+        **p4_fields,  # type: ignore[arg-type]
     )
+
+
+def _p4_headline(total: int, proven: int) -> str:
+    if proven > 0:
+        return f"{proven} потенциальных междокументных расхождений на проверку"
+    diagnostics = total
+    if diagnostics == 0:
+        return "Межкументные связи подтверждены · противоречий не обнаружено"
+    return f"Противоречий не обнаружено · {diagnostics} диагностик для ориентира"
+
+
+def _p4_document_label(store: ArtifactStore, document_id: str) -> str:
+    document = store.document(document_id)
+    if document is None:
+        return document_id
+    return document_type_label(str(document["document_type"])) or document_id
+
+
+def _p4_entity_label(store: ArtifactStore, entity: dict[str, Any]) -> str:
+    entity_type = str(entity.get("entity_type"))
+    if entity_type == "document":
+        return _p4_document_label(store, str(entity.get("canonical_label")))
+    if entity_type == "project":
+        return project_display_name(str(entity.get("canonical_label")))
+    return str(entity.get("canonical_label"))
+
+
+def _p4_graph_summary(
+    store: ArtifactStore, pillar: PillarArtifacts, project_id: str, proven: int
+) -> dict[str, object]:
+    """Compact, provenance-preserving cross-document coherence view for the
+    frontend: notable entities, relationships, confirmed links, unresolved
+    identities and suppressed comparisons. No graph library required."""
+    entities = pillar.p4_entities_by_project.get(project_id, [])
+    edges = pillar.p4_edges_by_project.get(project_id, [])
+    decisions = pillar.p4_resolution_by_project.get(project_id, [])
+    suppressed = pillar.p4_suppressed_by_project.get(project_id, [])
+    by_id = {str(e["entity_id"]): e for e in entities}
+
+    entities_by_type: dict[str, int] = {}
+    for entity in entities:
+        entity_type = str(entity["entity_type"])
+        entities_by_type[entity_type] = entities_by_type.get(entity_type, 0) + 1
+
+    # Notable entities exclude structural (project/document) and bulk
+    # (emission_source) nodes; those are summarized by count instead.
+    notable = [
+        {
+            "entity_id": str(e["entity_id"]),
+            "entity_type": str(e["entity_type"]),
+            "entity_type_label": _P4_ENTITY_TYPE_LABELS.get(
+                str(e["entity_type"]), str(e["entity_type"])
+            ),
+            "label": _p4_entity_label(store, e),
+            "role": e.get("role"),
+            "role_label": _P4_ROLE_LABELS.get(str(e.get("role"))) if e.get("role") else None,
+            "identifiers": list(e.get("identifiers") or []),
+            "aliases": list(e.get("aliases") or []),
+            "document_count": len(e.get("source_document_ids") or []),
+            "confidence": e.get("confidence"),
+        }
+        for e in entities
+        if str(e["entity_type"]) not in ("project", "document", "emission_source")
+    ]
+    notable.sort(key=lambda e: (e["entity_type"], str(e["label"])))
+
+    relationships = []
+    for edge in edges:
+        relation = str(edge["relation"])
+        if relation in ("project_contains_document", "document_describes_emission_source"):
+            continue  # structural / bulk — omitted from the compact table
+        source = by_id.get(str(edge["source_entity_id"]))
+        target = by_id.get(str(edge["target_entity_id"]))
+        if source is None or target is None:
+            continue
+        relationships.append(
+            {
+                "relation": relation,
+                "relation_label": _P4_RELATION_LABELS.get(relation, relation),
+                "source_label": _p4_entity_label(store, source),
+                "target_label": _p4_entity_label(store, target),
+                "target_type": str(target["entity_type"]),
+                "document_ids": list(edge.get("source_document_ids") or []),
+            }
+        )
+    relationships.sort(key=lambda r: (str(r["relation"]), str(r["source_label"])))
+
+    confirmed_links = [
+        {
+            "entity_type": str(d["entity_type"]),
+            "entity_type_label": _P4_ENTITY_TYPE_LABELS.get(
+                str(d["entity_type"]), str(d["entity_type"])
+            ),
+            "signal": str(d["signal"]),
+            "reason": str(d["reason"]),
+            "confidence": d.get("confidence"),
+        }
+        for d in decisions
+        if d.get("decision") == "merged"
+    ]
+    unresolved_links = [
+        {
+            "entity_type": str(d["entity_type"]),
+            "reason": str(d["reason"]),
+        }
+        for d in decisions
+        if d.get("decision") == "unresolved"
+    ]
+    suppressed_summary: dict[str, dict[str, Any]] = {}
+    for item in suppressed:
+        reason = str(item["reason"])
+        bucket = suppressed_summary.setdefault(reason, {"reason": reason, "count": 0, "detail": ""})
+        bucket["count"] = int(bucket["count"]) + 1
+        if not bucket["detail"] and item.get("detail"):
+            bucket["detail"] = str(item["detail"])
+
+    return {
+        "proven_conflicts": proven,
+        "entities_by_type": dict(sorted(entities_by_type.items())),
+        "emission_source_count": entities_by_type.get("emission_source", 0),
+        "notable_entities": notable,
+        "relationships": relationships,
+        "confirmed_links": confirmed_links,
+        "unresolved_links": unresolved_links,
+        "suppressed": sorted(suppressed_summary.values(), key=lambda s: str(s["reason"])),
+    }
 
 
 # --- projects ----------------------------------------------------------------
@@ -664,6 +892,7 @@ def build_finding_detail(
 
     evidence = _evidence_items(store, finding, assessment)
     demo_warning = DEMO_CORPUS_NOTICE if base.is_demo else None
+    coherence = _coherence_detail(store, pillar, finding) if pillar.descriptor.key == "p4" else None
 
     return FindingDetail(
         **base.model_dump(),
@@ -678,9 +907,50 @@ def build_finding_detail(
         inference_engine=inference_engine,
         requirement=requirement,
         quantitative=_quantitative_detail(finding),
+        coherence=coherence,
         demo_warning=demo_warning,
         review_notice=REVIEW_NOTICE,
     )
+
+
+def _coherence_detail(
+    store: ArtifactStore, pillar: PillarArtifacts, finding: dict[str, Any]
+) -> CoherenceDetail | None:
+    """P4 finding context: referenced entities and the conflicting claims that
+    back an evidence-based mismatch."""
+    entity_ids = list(finding.get("entity_ids") or [])
+    conflicting = finding.get("conflicting_claims") or []
+    if not entity_ids and not conflicting:
+        return None
+    entities: list[EntityRef] = []
+    for entity_id in entity_ids:
+        record = pillar.p4_entities_by_id.get(str(entity_id))
+        if record is None:
+            continue
+        entities.append(
+            EntityRef(
+                entity_id=str(record["entity_id"]),
+                entity_type=str(record["entity_type"]),
+                label=str(record.get("canonical_label", "")),
+                role=record.get("role"),
+                identifiers=list(record.get("identifiers") or []),
+            )
+        )
+    conflicting_claims = []
+    for claim in conflicting:
+        document = (
+            store.document(str(claim.get("document_id"))) if claim.get("document_id") else None
+        )
+        conflicting_claims.append(
+            ConflictingClaimRef(
+                document_id=str(claim.get("document_id", "")),
+                document_type=str(document["document_type"]) if document else None,
+                attribute=str(claim.get("attribute", "")),
+                raw_value=str(claim.get("raw_value", "")),
+                normalized_value=str(claim.get("normalized_value", "")),
+            )
+        )
+    return CoherenceDetail(entities=entities, conflicting_claims=conflicting_claims)
 
 
 def _quantitative_detail(finding: dict[str, Any]) -> QuantitativeDetail | None:

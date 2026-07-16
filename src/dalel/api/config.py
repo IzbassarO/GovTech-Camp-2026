@@ -107,14 +107,32 @@ PILLARS: tuple[PillarDescriptor, ...] = (
         score_field="quantitative_consistency_priority_score",
         score_label="Приоритет числовой проверки",
     ),
+    PillarDescriptor(
+        pillar_id="P4",
+        key="p4",
+        results_subdir="p4/v1",
+        title="Междокументная согласованность",
+        short_title="Междокументная",
+        description=(
+            "Сопоставляет сведения о проекте, объектах, местоположении,"
+            " деятельности и периодах между документами. Конфликт поднимается"
+            " только при явном несовместимом идентификаторе; различия написания"
+            " и транслитерации считаются алиасами, а не противоречиями."
+        ),
+        score_field="cross_document_coherence_priority_score",
+        score_label="Приоритет проверки согласованности",
+    ),
 )
 
 # Reserved, NOT-YET-IMPLEMENTED pillars. Surfaced in the API/UI as
 # roadmap items (available=false) so the contract already carries them.
+# P4 has been implemented (Cross-Document Coherence) and moved into PILLARS
+# above; spatial / cartographic / geospatial analysis belongs to the later
+# P5/P6 phases, NOT to P4.
 RESERVED_PILLARS: tuple[dict[str, str], ...] = (
     {
-        "pillar_id": "P4",
-        "key": "p4",
+        "pillar_id": "P5",
+        "key": "p5",
         "title": "Пространственный и картографический анализ",
         "description": "Геопривязка объектов и зон воздействия — следующий этап.",
     },

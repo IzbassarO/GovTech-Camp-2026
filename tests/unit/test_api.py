@@ -41,7 +41,7 @@ def test_health(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["data_ready"] is True
     assert body["projects_available"] == 4
-    assert set(body["pillars_available"]) == {"P1", "P2", "P3"}
+    assert set(body["pillars_available"]) == {"P1", "P2", "P3", "P4"}
 
 
 def test_list_projects(client: TestClient) -> None:
@@ -78,14 +78,17 @@ def test_project_detail(client: TestClient) -> None:
     assert all("document_type" in d for d in body["documents"])
 
 
-def test_project_summary_has_three_pillars(client: TestClient) -> None:
+def test_project_summary_has_four_pillars(client: TestClient) -> None:
     body = client.get(f"/api/projects/{BAYTEREK}/summary").json()
     pillars = {p["pillar_id"]: p for p in body["pillars"]}
-    assert set(pillars) == {"P1", "P2", "P3"}
+    assert set(pillars) == {"P1", "P2", "P3", "P4"}
     assert body["integrated_risk_available"] is False
     assert "следующий этап" in body["integrated_risk_note"]
+    # P4 is now implemented; spatial/cartographic analysis moved to the P5
+    # roadmap slot, integrated risk stays META.
     reserved = {p["pillar_id"] for p in body["reserved_pillars"]}
-    assert "P4" in reserved and "META" in reserved
+    assert "P5" in reserved and "META" in reserved
+    assert "P4" not in reserved
     assert all(p["available"] is False for p in body["reserved_pillars"])
 
 
@@ -101,7 +104,7 @@ def test_summary_has_no_fabricated_risk_fields(client: TestClient) -> None:
 
 def test_pillars_endpoint_matches_summary(client: TestClient) -> None:
     pillars = client.get(f"/api/projects/{BEREKE}/pillars").json()
-    assert [p["pillar_id"] for p in pillars] == ["P1", "P2", "P3"]
+    assert [p["pillar_id"] for p in pillars] == ["P1", "P2", "P3", "P4"]
 
 
 # --- P2 demo honesty ---------------------------------------------------------
@@ -188,7 +191,7 @@ def test_p3_present_in_available_filters_despite_zero_findings(client: TestClien
     # which pillars currently have finding rows.
     for project in (BEREKE, BAYTEREK):
         filters = client.get(f"/api/projects/{project}/findings").json()["available_filters"]
-        assert filters["pillars"] == ["p1", "p2", "p3"]
+        assert filters["pillars"] == ["p1", "p2", "p3", "p4"]
         assert "p3" in filters["pillars"]
 
 
@@ -204,7 +207,7 @@ def test_selected_p3_filter_state_is_preserved(client: TestClient) -> None:
     # Selecting p3 must not silently reset the available list to "all": p3
     # stays present so the frontend keeps it selected.
     body = client.get(f"/api/projects/{BAYTEREK}/findings?pillar=p3").json()
-    assert body["available_filters"]["pillars"] == ["p1", "p2", "p3"]
+    assert body["available_filters"]["pillars"] == ["p1", "p2", "p3", "p4"]
 
 
 # --- Blocker 2: every P2 finding preserves demo/legal-safety metadata --------
@@ -290,7 +293,8 @@ def test_findings_arbitrary_pillar_returns_404(client: TestClient) -> None:
 
 def test_findings_roadmap_pillars_rejected_as_filters(client: TestClient) -> None:
     # Roadmap pillars exist in the contract but are NOT selectable filters.
-    for pillar in ("p4", "meta"):
+    # (P4 is now implemented and selectable; P5/META remain roadmap.)
+    for pillar in ("p5", "meta"):
         response = client.get(f"/api/projects/{BAYTEREK}/findings?pillar={pillar}")
         assert response.status_code == 404, pillar
         assert response.json()["error"] == "pillar_not_found"

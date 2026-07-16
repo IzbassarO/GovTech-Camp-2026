@@ -46,12 +46,93 @@ export interface PillarSummary {
   warning: string | null;
   limitations: string | null;
   metrics: MetricItem[];
+  // P4 cross-document coherence (populated only when P4 is available).
+  entity_count: number | null;
+  edge_count: number | null;
+  linked_document_count: number | null;
+  unresolved_entity_count: number | null;
+  suppressed_comparison_count: number | null;
   calibrated_risk: number | null;
   model_score: number | null;
   shap_contributions: unknown[] | null;
-  graph: unknown | null;
+  // P4 populates `graph` with the compact coherence view; `map` stays reserved
+  // for the later spatial/cartographic phase (P5/P6).
+  graph: CoherenceGraph | null;
   map: unknown | null;
   provider: Record<string, string> | null;
+}
+
+export interface P4NotableEntity {
+  entity_id: string;
+  entity_type: string;
+  entity_type_label: string;
+  label: string;
+  role: string | null;
+  role_label: string | null;
+  identifiers: string[];
+  aliases: string[];
+  document_count: number;
+  confidence: number | null;
+}
+
+export interface P4Relationship {
+  relation: string;
+  relation_label: string;
+  source_label: string;
+  target_label: string;
+  target_type: string;
+  document_ids: string[];
+}
+
+export interface P4ConfirmedLink {
+  entity_type: string;
+  entity_type_label: string;
+  signal: string;
+  reason: string;
+  confidence: number | null;
+}
+
+export interface P4UnresolvedLink {
+  entity_type: string;
+  reason: string;
+}
+
+export interface P4SuppressedItem {
+  reason: string;
+  count: number;
+  detail: string;
+}
+
+export interface CoherenceGraph {
+  proven_conflicts: number;
+  entities_by_type: Record<string, number>;
+  emission_source_count: number;
+  notable_entities: P4NotableEntity[];
+  relationships: P4Relationship[];
+  confirmed_links: P4ConfirmedLink[];
+  unresolved_links: P4UnresolvedLink[];
+  suppressed: P4SuppressedItem[];
+}
+
+export interface EntityRef {
+  entity_id: string;
+  entity_type: string;
+  label: string;
+  role: string | null;
+  identifiers: string[];
+}
+
+export interface ConflictingClaimRef {
+  document_id: string;
+  document_type: string | null;
+  attribute: string;
+  raw_value: string;
+  normalized_value: string;
+}
+
+export interface CoherenceDetail {
+  entities: EntityRef[];
+  conflicting_claims: ConflictingClaimRef[];
 }
 
 export interface ReservedPillar {
@@ -173,6 +254,7 @@ export interface FindingDetail extends FindingListItem {
   inference_engine: string | null;
   requirement: RequirementRef | null;
   quantitative: QuantitativeDetail | null;
+  coherence: CoherenceDetail | null;
   demo_warning: string | null;
   review_notice: string;
 }
