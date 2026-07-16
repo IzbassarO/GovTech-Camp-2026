@@ -7,12 +7,13 @@ produced here contains a filesystem path, secret or Python repr.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from dalel.api import API_VERSION
-from dalel.api.config import RESERVED_PILLARS
+from dalel.api.config import META_ID, META_KEY, META_TITLE, RESERVED_PILLARS
 from dalel.api.repository import ArtifactStore, PillarArtifacts
 from dalel.api.schemas import (
+    CalibrationStatus,
     CoherenceDetail,
     ConflictingClaimRef,
     DocumentInfo,
@@ -23,15 +24,22 @@ from dalel.api.schemas import (
     FindingFilters,
     FindingListItem,
     FindingsPage,
+    MetaFeatureContribution,
+    MetaPillarContribution,
+    MetaPillarId,
+    MetaScoreAdjustment,
     MetricItem,
     PillarSummary,
     ProjectDetail,
     ProjectListItem,
+    ProjectMetaAssessment,
     ProjectSummary,
     QuantitativeDetail,
     ReportResponse,
     RequirementRef,
     ReservedPillar,
+    ReviewPriorityLevel,
+    ScoreAdjustmentType,
     SeverityCounts,
     SystemMetrics,
 )
@@ -51,9 +59,22 @@ P4_EMPTY_STATE = "Доказанных междокументных против
 P4_EXCLUSION_NOTE = (
     "Сопоставления с недостаточной идентичностью или контекстом были исключены из выводов."
 )
-INTEGRATED_RISK_NOTE = (
-    "Интегральный риск — следующий этап. Сейчас сводная оценка не рассчитывается."
+META_REVIEW_NOTICE = (
+    "Это приоритет экспертной проверки, а не вероятность нарушения,"
+    " экологического вреда или итоговое административное решение."
 )
+META_CALIBRATION_NOTE = (
+    "Калибровка станет доступна после накопления достаточной экспертной разметки."
+)
+META_UNAVAILABLE_NOTE = (
+    "Интегральная приоритетность проверки недоступна: валидные Meta-артефакты ещё не сформированы."
+)
+META_LEVEL_LABELS = {
+    "low": "низкая",
+    "moderate": "умеренная",
+    "elevated": "повышенная",
+    "high": "высокая",
+}
 
 # Presentation-only project display names (not legal entity identities).
 _PROJECT_NAMES = {
@@ -539,6 +560,295 @@ def _p4_graph_summary(
     }
 
 
+# --- Meta integrated review priority ----------------------------------------
+
+
+def _float_value(value: object, default: float = 0.0) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return default
+
+
+def _unit_interval(value: object) -> float:
+    number = _float_value(value)
+    # The production schema uses 0..1. Accept a validated 0..100 artifact
+    # convention at this normalization boundary so the public contract stays
+    # stable if the configured representation changes.
+    if 1 < number <= 100:
+        return number / 100
+    return number
+
+
+def _string_list(value: object) -> list[str]:
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else [value]
+    result: list[str] = []
+    for item in items:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            text = next(
+                (
+                    item.get(key)
+                    for key in ("explanation", "message", "limitation", "description", "name")
+                    if item.get(key)
+                ),
+                None,
+            )
+            if text is not None:
+                result.append(str(text))
+    return result
+
+
+def _source_ids(record: dict[str, Any]) -> tuple[list[str], list[str]]:
+    artifacts = _string_list(record.get("source_artifact_ids"))
+    findings = _string_list(record.get("source_finding_ids"))
+    for source_id in _string_list(record.get("source_ids")):
+        if source_id.startswith(("P1__", "P2__", "P3__", "P4__")):
+            findings.append(source_id)
+        else:
+            artifacts.append(source_id)
+    return sorted(set(artifacts)), sorted(set(findings))
+
+
+def _meta_feature(record: dict[str, Any]) -> MetaFeatureContribution:
+    artifacts, findings = _source_ids(record)
+    raw_value = record.get("raw_value")
+    if not isinstance(raw_value, (str, int, float, bool)):
+        raw_value = None
+    return MetaFeatureContribution(
+        contribution_id=str(record.get("contribution_id") or ""),
+        feature_id=str(record.get("feature_id") or ""),
+        feature_name=str(record.get("feature_name") or record.get("name") or "unknown_feature"),
+        pillar_id=cast(
+            MetaPillarId,
+            str(
+                record.get("pillar_id") or record.get("pillar_source") or record.get("pillar")
+            ).upper(),
+        ),
+        raw_value=raw_value,
+        normalized_value=_float_value(record.get("normalized_value")),
+        weight=_float_value(record.get("weight")),
+        raw_contribution=_float_value(
+            record.get("raw_contribution", record.get("contribution", 0.0))
+        ),
+        contribution=_float_value(
+            record.get("contribution", record.get("final_contribution", 0.0))
+        ),
+        source_artifact_ids=artifacts,
+        source_finding_ids=findings,
+        explanation=str(record.get("explanation") or ""),
+        limitations=_string_list(record.get("limitations")),
+        adjustments=_string_list(record.get("adjustments")),
+    )
+
+
+def _meta_pillar(record: dict[str, Any]) -> MetaPillarContribution:
+    raw_subtotal = _float_value(
+        record.get(
+            "raw_subtotal",
+            record.get("subtotal_before_cap", record.get("pillar_subtotal", 0.0)),
+        )
+    )
+    adjusted_subtotal = _float_value(
+        record.get(
+            "adjusted_subtotal",
+            record.get(
+                "subtotal",
+                record.get("subtotal_after_cap", record.get("contribution", raw_subtotal)),
+            ),
+        )
+    )
+    cap_amount = _float_value(
+        record.get(
+            "cap_amount",
+            record.get(
+                "cap_adjustment",
+                record.get("cap_reduction", min(0.0, adjusted_subtotal - raw_subtotal)),
+            ),
+        )
+    )
+    discount_amount = _float_value(
+        record.get("discount_amount", record.get("discount_reduction", 0.0))
+    )
+    pillar_id = str(record.get("pillar_id") or record.get("pillar") or "META").upper()
+    explanation = {
+        "P1": "Вклад сигналов целостности и структурной полноты документов.",
+        "P2": "Вклад ограничен: используется демонстрационный нормативный корпус.",
+        "P3": "Вклад доказанных количественных расхождений без бонуса за их отсутствие.",
+        "P4": "Вклад междокументных расхождений и ограниченных диагностических сигналов.",
+    }.get(pillar_id, "")
+    limitations = _string_list(record.get("limitations"))
+    if pillar_id == "P2" and bool(record.get("available", True)):
+        limitations = [
+            "P2 использует синтетический неавторитетный корпус; вклад явно снижен и ограничен."
+        ]
+    elif not bool(record.get("available", True)):
+        limitations = [
+            f"Артефакты {pillar_id} недоступны: отсутствие не считается успешной проверкой."
+        ]
+    return MetaPillarContribution(
+        contribution_id=str(record.get("contribution_id") or ""),
+        pillar_id=cast(MetaPillarId, pillar_id),
+        available=bool(record.get("available", True)),
+        raw_subtotal=raw_subtotal,
+        adjusted_subtotal=adjusted_subtotal,
+        discount_factor=_float_value(record.get("discount_factor"), 1.0),
+        cap_applied=bool(record.get("cap_applied", cap_amount != 0)),
+        discount_applied=bool(record.get("discount_applied", discount_amount != 0)),
+        cap_amount=cap_amount,
+        discount_amount=discount_amount,
+        cap=_float_value(record.get("cap")),
+        evidence_coverage=_unit_interval(record.get("evidence_coverage")),
+        assessment_confidence=_unit_interval(record.get("assessment_confidence")),
+        feature_contribution_ids=_string_list(record.get("feature_contribution_ids")),
+        explanation=str(record.get("explanation") or explanation),
+        limitations=limitations,
+    )
+
+
+def _adjustment(record: object, fallback_name: str) -> MetaScoreAdjustment:
+    if isinstance(record, str):
+        return MetaScoreAdjustment(name=fallback_name, amount=0.0, explanation=record)
+    if not isinstance(record, dict):
+        return MetaScoreAdjustment(name=fallback_name, amount=0.0, explanation="")
+    config_key = str(record.get("config_key") or "")
+    pillar_value = record.get("pillar_id") or record.get("pillar_source")
+    pillar_id = str(pillar_value).upper() if pillar_value is not None else None
+    if config_key == "p2_synthetic_discount":
+        name = "Дисконт синтетического источника P2"
+        explanation = "Вклад P2 снижен из-за синтетического неавторитетного нормативного корпуса."
+    elif config_key == "p2_synthetic_cap":
+        name = "Ограничение вклада P2"
+        explanation = "Настроенный предел не позволяет демонстрационному P2 доминировать."
+    elif config_key.startswith("pillar_caps."):
+        name = f"Ограничение вклада {pillar_id or 'пиллара'}"
+        explanation = "Настроенный предел предотвращает доминирование одного пиллара."
+    elif config_key.startswith("safeguards."):
+        name = "Поправка на неопределённость"
+        explanation = "Покрытие влияет на уверенность, а не скрыто уменьшает приоритет проверки."
+    else:
+        name = str(record.get("name") or record.get("adjustment") or fallback_name)
+        explanation = str(record.get("explanation") or record.get("reason") or "")
+    return MetaScoreAdjustment(
+        name=name,
+        amount=_float_value(
+            record.get(
+                "amount",
+                record.get("points", record.get("reduction", record.get("value", 0.0))),
+            )
+        ),
+        explanation=explanation,
+        pillar_id=cast(MetaPillarId | None, pillar_id),
+        adjustment_id=(
+            str(record["adjustment_id"]) if record.get("adjustment_id") is not None else None
+        ),
+        adjustment_type=cast(
+            ScoreAdjustmentType | None,
+            (str(record["adjustment_type"]) if record.get("adjustment_type") is not None else None),
+        ),
+        applied=bool(record.get("applied", True)),
+        config_key=config_key or None,
+    )
+
+
+def _adjustments(value: object, fallback_name: str) -> list[MetaScoreAdjustment]:
+    if value is None:
+        return []
+    if isinstance(value, dict):
+        records: list[object] = [
+            {"name": str(name), "amount": amount} for name, amount in sorted(value.items())
+        ]
+    elif isinstance(value, list):
+        records = list(value)
+    else:
+        records = [value]
+    return [_adjustment(record, fallback_name) for record in records]
+
+
+def build_meta_assessment(store: ArtifactStore, project_id: str) -> ProjectMetaAssessment | None:
+    """Normalize one valid Meta assessment for API/frontend consumption."""
+    if not store.meta.available:
+        return None
+    raw = store.meta.assessment(project_id)
+    if raw is None:
+        return None
+
+    pillar_records = store.meta.pillar_contributions_by_project.get(project_id)
+    if not pillar_records and isinstance(raw.get("pillar_contributions"), list):
+        pillar_records = raw["pillar_contributions"]
+    feature_records = store.meta.feature_contributions_by_project.get(project_id)
+    if not feature_records and isinstance(raw.get("feature_contributions"), list):
+        feature_records = raw["feature_contributions"]
+    pillars = [_meta_pillar(record) for record in (pillar_records or [])]
+    features = [_meta_feature(record) for record in (feature_records or [])]
+    features.sort(key=lambda item: (item.pillar_id, item.feature_name))
+    top_positive = sorted(
+        (item for item in features if item.contribution > 0),
+        key=lambda item: (-item.contribution, item.pillar_id, item.feature_name),
+    )[:5]
+
+    score = _float_value(raw.get("review_priority_score", raw.get("final_score", 0.0)))
+    final_score = _float_value(raw.get("final_score", score), score)
+    available_pillars = _string_list(raw.get("available_pillars"))
+    missing_pillars = _string_list(raw.get("missing_pillars"))
+    if not available_pillars and not missing_pillars:
+        available_pillars = [item.pillar_id for item in pillars if item.available]
+        missing_pillars = [item.pillar_id for item in pillars if not item.available]
+
+    calibration_status = str(raw.get("calibration_status") or "not_available_without_expert_labels")
+    # No real expert-labelled model exists in this accepted production phase.
+    # Never pass through a fabricated probability or SHAP payload even if a
+    # hand-edited artifact contains one; validate-meta independently rejects it.
+    calibrated_probability = None
+    shap_contributions = None
+
+    return ProjectMetaAssessment(
+        assessment_id=str(raw.get("assessment_id") or f"META__{project_id}"),
+        project_id=project_id,
+        meta_version=str(raw.get("meta_version") or ""),
+        primary_label=str(raw.get("primary_label") or "Integrated Review Priority Score"),
+        review_priority_score=score,
+        review_priority_level=cast(
+            ReviewPriorityLevel,
+            str(raw.get("review_priority_level") or raw.get("level")),
+        ),
+        base_score=_float_value(raw.get("base_score")),
+        raw_feature_total=_float_value(raw.get("raw_feature_total")),
+        uncertainty_adjustment=_float_value(raw.get("uncertainty_adjustment")),
+        global_cap_adjustment=_float_value(raw.get("global_cap_adjustment")),
+        final_score=final_score,
+        evidence_coverage=_unit_interval(raw.get("evidence_coverage")),
+        assessment_confidence=_unit_interval(raw.get("assessment_confidence")),
+        pillar_contributions=pillars,
+        feature_contributions=features,
+        top_positive_factors=top_positive,
+        caps_applied=_adjustments(raw.get("caps_applied"), "Ограничение вклада"),
+        discounts_applied=_adjustments(raw.get("discounts_applied"), "Дисконт вклада"),
+        uncertainty_adjustments=_adjustments(
+            raw.get("uncertainty_adjustments"), "Поправка на неопределённость"
+        ),
+        available_pillars=available_pillars,
+        missing_pillars=missing_pillars,
+        limitations=_string_list(raw.get("limitations")),
+        counterfactual_explanation=str(
+            raw.get("counterfactual_explanation")
+            or "Для снижения оценки необходимо устранить наиболее влиятельные факторы проверки."
+        ),
+        calibration_status=cast(CalibrationStatus, calibration_status),
+        calibrated_probability=calibrated_probability,
+        shap_contributions=shap_contributions,
+        experimental_test_only=bool(raw.get("experimental_test_only", False)),
+        scoring_config_version=(
+            str(raw["scoring_config_version"])
+            if raw.get("scoring_config_version") is not None
+            else None
+        ),
+        review_notice=META_REVIEW_NOTICE,
+    )
+
+
 # --- projects ----------------------------------------------------------------
 
 
@@ -561,6 +871,7 @@ def build_project_list_item(store: ArtifactStore, project: dict[str, Any]) -> Pr
         pillar_finding_counts=pillar_counts,
         has_demo_pillar=any(p.descriptor.is_demo for p in store.pillars.values()),
         dataset_version=store.dataset_version,
+        meta=build_meta_assessment(store, project_id),
     )
 
 
@@ -597,6 +908,7 @@ def build_project_detail(store: ArtifactStore, project: dict[str, Any]) -> Proje
         documents=documents,
         findings_total=len(findings),
         severity_counts=_severity_counts(findings),
+        meta=build_meta_assessment(store, project_id),
     )
 
 
@@ -613,6 +925,7 @@ def build_project_summary(store: ArtifactStore, project: dict[str, Any]) -> Proj
         )
         for item in RESERVED_PILLARS
     ]
+    meta = build_meta_assessment(store, project_id)
     return ProjectSummary(
         project_id=project_id,
         name=project_display_name(project_id),
@@ -623,8 +936,10 @@ def build_project_summary(store: ArtifactStore, project: dict[str, Any]) -> Proj
         severity_counts=_severity_counts(findings),
         pillars=pillars,
         reserved_pillars=reserved,
-        integrated_risk_available=False,
-        integrated_risk_note=INTEGRATED_RISK_NOTE,
+        meta=meta,
+        meta_available=meta is not None,
+        integrated_risk_available=meta is not None,
+        integrated_risk_note=META_REVIEW_NOTICE if meta is not None else META_UNAVAILABLE_NOTE,
     )
 
 
@@ -983,6 +1298,8 @@ def find_finding(
 
 
 def build_report(store: ArtifactStore, project: dict[str, Any], pillar_key: str) -> ReportResponse:
+    if pillar_key == META_KEY:
+        return _build_meta_report(store, project)
     pillar = store.pillars[pillar_key]
     project_id = str(project["project_id"])
     summary = build_pillar_summary(store, pillar, project_id)
@@ -1041,6 +1358,102 @@ def build_report(store: ArtifactStore, project: dict[str, Any], pillar_key: str)
     )
 
 
+def _build_meta_report(store: ArtifactStore, project: dict[str, Any]) -> ReportResponse:
+    project_id = str(project["project_id"])
+    meta = build_meta_assessment(store, project_id)
+    if meta is None:
+        # Routes guard this state; keeping the builder total also makes direct
+        # service use deterministic in tests.
+        content = (
+            f"# {META_TITLE} — {project_display_name(project_id)}\n\n{META_UNAVAILABLE_NOTE}\n"
+        )
+    else:
+        lines = [
+            f"# {META_TITLE} — {project_display_name(project_id)}",
+            "",
+            f"_{META_REVIEW_NOTICE}_",
+            "",
+            "## Сводка",
+            "",
+            f"- Оценка: {meta.review_priority_score:g} / 100",
+            f"- Уровень: {META_LEVEL_LABELS[meta.review_priority_level]}",
+            f"- Покрытие свидетельств: {meta.evidence_coverage:.0%}",
+            f"- Уверенность оценки: {meta.assessment_confidence:.0%}",
+            "",
+            "## Вклад пилларов",
+            "",
+        ]
+        for contribution in meta.pillar_contributions:
+            availability = "доступен" if contribution.available else "недоступен"
+            details = [availability, f"исходный вклад {contribution.raw_subtotal:g}"]
+            if contribution.discount_amount:
+                details.append(
+                    f"дисконт {contribution.discount_amount:g}"
+                    f" · коэффициент {contribution.discount_factor:g}"
+                )
+            details.append(f"настроенный предел ≤ {contribution.cap:g}")
+            if contribution.cap_applied:
+                details.append(f"корректировка лимитом {contribution.cap_amount:g}")
+            lines.append(
+                f"- {contribution.pillar_id}: {contribution.adjusted_subtotal:g}"
+                f" ({'; '.join(details)})"
+            )
+        lines += ["", "## Факторы итоговой оценки", ""]
+        for factor in meta.top_positive_factors:
+            lines.append(
+                f"- {factor.pillar_id} · {factor.feature_name}: +{factor.contribution:g}"
+                f" — {factor.explanation}"
+            )
+        p2 = next(
+            (item for item in meta.pillar_contributions if item.pillar_id == "P2"),
+            None,
+        )
+        if p2 is not None and p2.available:
+            lines += [
+                "",
+                "## Ограничение демонстрационного вклада P2",
+                "",
+                (
+                    f"- Вклад P2 умножен на {p2.discount_factor:g}:"
+                    f" корректировка {p2.discount_amount:g} баллов."
+                ),
+                (
+                    f"- Настроенный максимальный вклад P2 — {p2.cap:g} баллов;"
+                    f" фактическая корректировка лимитом — {p2.cap_amount:g}."
+                ),
+                "- Причина: используется синтетический неавторитетный нормативный корпус.",
+            ]
+        applied_caps = [item for item in meta.caps_applied if item.applied]
+        if applied_caps:
+            lines += ["", "## Применённые ограничения", ""]
+            for item in applied_caps:
+                pillar = item.pillar_id or "Meta"
+                lines.append(f"- Лимит {pillar}: корректировка {item.amount:g} баллов.")
+        lines += [
+            "",
+            "## Калибровка",
+            "",
+            META_CALIBRATION_NOTE,
+            "Статус: недоступна без достаточной экспертной разметки.",
+            "",
+        ]
+        if meta.limitations:
+            lines += ["## Ограничения", ""]
+            lines.extend(f"- {limitation}" for limitation in meta.limitations)
+            lines.append("")
+        content = "\n".join(lines)
+
+    return ReportResponse(
+        project_id=project_id,
+        pillar=META_KEY,
+        title=f"{META_TITLE} — {project_display_name(project_id)}",
+        format="markdown",
+        content=content,
+        is_demo=False,
+        generated_note=("Сводка сформирована из валидированных детерминированных Meta-артефактов."),
+    )
+
+
 # --- system ------------------------------------------------------------------
 
 
@@ -1060,6 +1473,20 @@ def build_system_metrics(store: ArtifactStore) -> SystemMetrics:
                 "finding_count": len(pillar.findings),
             }
         )
+    if store.meta.available:
+        pillar_infos.append(
+            {
+                "pillar_id": META_ID,
+                "key": META_KEY,
+                "title": META_TITLE,
+                "available": True,
+                "is_demo": False,
+                "is_authoritative": False,
+                "finding_count": 0,
+                "assessment_count": len(store.meta.project_assessments),
+                "calibration_status": "not_available_without_expert_labels",
+            }
+        )
     return SystemMetrics(
         api_version=API_VERSION,
         dataset_version=store.dataset_version,
@@ -1070,11 +1497,35 @@ def build_system_metrics(store: ArtifactStore) -> SystemMetrics:
         findings_by_pillar=findings_by_pillar,
         severity_counts=_severity_counts(all_findings),
         pillars=pillar_infos,
+        meta_available=store.meta.available,
+        meta_projects_assessed=(len(store.meta.project_assessments) if store.meta.available else 0),
+        meta_metrics=(
+            {
+                key: store.meta.metrics[key]
+                for key in (
+                    "score_ordering",
+                    "score_distribution",
+                    "levels",
+                    "mean_evidence_coverage",
+                    "mean_assessment_confidence",
+                    "calibration_status",
+                )
+                if key in store.meta.metrics
+            }
+            if store.meta.available
+            else None
+        ),
     )
 
 
 def build_project_list(store: ArtifactStore) -> list[ProjectListItem]:
-    return [
-        build_project_list_item(store, project)
-        for project in sorted(store.projects, key=lambda p: str(p["project_id"]))
-    ]
+    items = [build_project_list_item(store, project) for project in store.projects]
+    if store.meta.available:
+        return sorted(
+            items,
+            key=lambda item: (
+                -(item.meta.review_priority_score if item.meta is not None else -1),
+                item.project_id,
+            ),
+        )
+    return sorted(items, key=lambda item: item.project_id)

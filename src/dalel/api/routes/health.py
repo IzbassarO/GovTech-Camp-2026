@@ -17,10 +17,13 @@ def health() -> HealthResponse:
     available = [
         pillar.descriptor.pillar_id for pillar in store.pillars.values() if pillar.available
     ]
+    if store.meta.available:
+        available.append("META")
     return HealthResponse(
         status="ok",
         api_version=API_VERSION,
         projects_available=len(store.projects),
         pillars_available=available,
+        meta_available=store.meta.available,
         data_ready=bool(store.projects) and bool(available),
     )

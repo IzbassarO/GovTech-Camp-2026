@@ -5,15 +5,20 @@ import { FileStack, FolderKanban, ShieldCheck, TriangleAlert } from "lucide-reac
 
 import type { ProjectListItem, SystemMetrics } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
-import { SEVERITY_LABEL, SEVERITY_ORDER } from "@/lib/ui";
+import { rankProjectsByMeta, SEVERITY_LABEL, SEVERITY_ORDER } from "@/lib/ui";
 import { ErrorBlock, Section, SkeletonCard } from "@/components/primitives";
 import { StatCard } from "@/components/StatCard";
 import { ProjectCard } from "@/components/ProjectCard";
 import { PipelineSteps } from "@/components/PipelineSteps";
+import { MetaDisclaimer } from "@/components/MetaAssessmentView";
 
 export default function DashboardPage() {
   const metrics = useApi<SystemMetrics>("/api/system/metrics");
   const projects = useApi<ProjectListItem[]>("/api/projects");
+  const rankedProjects = projects.data ? rankProjectsByMeta(projects.data) : null;
+  const metaRankingAvailable = rankedProjects
+    ? rankedProjects.some((project) => project.meta !== null)
+    : null;
 
   return (
     <div className="space-y-10">
@@ -44,7 +49,11 @@ export default function DashboardPage() {
 
       <Section
         title="Сводка анализа"
-        description="Агрегировано по принятым результатам P1 / P2 / P3. Интегральная оценка риска пока не рассчитывается."
+        description={
+          metrics.data && !metrics.data.meta_available
+            ? "Агрегировано по принятым результатам P1–P4; Meta-оценка недоступна."
+            : "Агрегировано по принятым результатам P1–P4 и детерминированной Meta-оценке."
+        }
       >
         {metrics.error ? (
           <ErrorBlock message={metrics.error} />
@@ -72,13 +81,16 @@ export default function DashboardPage() {
                 <StatCard
                   label="Замечаний всего"
                   value={metrics.data.findings_total}
-                  hint="P1 структура · P2 демо-корпус · P3 числа"
+                  hint="P1 структура · P2 демо-корпус · P3 числа · P4 связи"
                   icon={<TriangleAlert className="h-5 w-5" aria-hidden />}
                 />
                 <StatCard
-                  label="Доказанных числовых противоречий"
-                  value={metrics.data.findings_by_pillar.p3 ?? 0}
-                  hint="P3: недостаточно контекстные сравнения исключены"
+                  label="Замечаний P3 / P4"
+                  value={
+                    (metrics.data.findings_by_pillar.p3 ?? 0) +
+                    (metrics.data.findings_by_pillar.p4 ?? 0)
+                  }
+                  hint="Противоречия и диагностические сигналы показаны раздельно в проектах"
                   icon={<ShieldCheck className="h-5 w-5" aria-hidden />}
                 />
               </>
@@ -100,42 +112,56 @@ export default function DashboardPage() {
               </span>
             ))}
             <span className="ml-auto rounded-lg bg-slate-100 px-3 py-1 text-xs text-slate-500">
-              Интегральный риск — следующий этап
+              {metrics.data.meta_available
+                ? `Интегральная приоритетность проверки: ${metrics.data.meta_projects_assessed} из ${metrics.data.projects} проектов`
+                : "Интегральная приоритетность проверки недоступна"}
             </span>
           </div>
         ) : null}
       </Section>
 
       <Section title="Конвейер и статус пилларов">
-        <PipelineSteps />
+        <PipelineSteps
+          metaAvailable={metrics.data?.meta_available ?? null}
+          statusError={metrics.error !== null}
+        />
       </Section>
 
       <Section
-        title="Проекты"
-        description="Пакеты экологической документации, прошедшие анализ."
+        title={
+          metaRankingAvailable === false
+            ? "Проекты"
+            : "Интегральная приоритетность проверки"
+        }
+        description={
+          metaRankingAvailable === false
+            ? "Валидные Meta-артефакты недоступны; проекты показаны без интегрального ранжирования."
+            : "Проекты упорядочены по детерминированному баллу Meta; покрытие доказательств показано отдельно."
+        }
         action={
           <Link href="/projects" className="text-sm font-medium text-accent-700 hover:underline">
             Все проекты →
           </Link>
         }
       >
-        {projects.error ? (
-          <ErrorBlock message={projects.error} />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.loading || !projects.data ? (
+        {metaRankingAvailable === false ? null : <MetaDisclaimer />}
+        {projects.error ? <ErrorBlock message={projects.error} /> : null}
+        {!projects.error ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {projects.loading || !rankedProjects ? (
               <>
+                <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
                 <SkeletonCard />
               </>
             ) : (
-              projects.data.map((project) => (
+              rankedProjects.map((project) => (
                 <ProjectCard key={project.project_id} project={project} />
               ))
             )}
           </div>
-        )}
+        ) : null}
       </Section>
     </div>
   );

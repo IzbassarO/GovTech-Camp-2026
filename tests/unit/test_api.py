@@ -1,6 +1,6 @@
 """DÁLEL Eco demo API tests.
 
-Exercise the read-only API over the accepted P1/P2/P3 artifacts. No
+Exercise the read-only API over the accepted P1/P2/P3/P4 and Meta artifacts. No
 network, no LLM: the FastAPI ``TestClient`` runs the app in-process
 against the real on-disk artifacts. Focus areas: health, project list,
 summary, finding filters, finding detail, missing resources, the P2
@@ -41,7 +41,8 @@ def test_health(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["data_ready"] is True
     assert body["projects_available"] == 4
-    assert set(body["pillars_available"]) == {"P1", "P2", "P3", "P4"}
+    assert set(body["pillars_available"]) == {"P1", "P2", "P3", "P4", "META"}
+    assert body["meta_available"] is True
 
 
 def test_list_projects(client: TestClient) -> None:
@@ -66,6 +67,12 @@ def test_system_metrics(client: TestClient) -> None:
     assert body["findings_by_pillar"]["p3"] == 0
     assert body["dataset_fingerprint"] is not None
     assert len(body["dataset_fingerprint"]) == 64
+    assert body["meta_available"] is True
+    assert body["meta_projects_assessed"] == 4
+    assert body["meta_metrics"]["score_ordering"][0] == BAYTEREK
+    meta_descriptor = next(p for p in body["pillars"] if p["pillar_id"] == "META")
+    assert meta_descriptor["finding_count"] == 0
+    assert meta_descriptor["is_authoritative"] is False
 
 
 # --- project detail & summary ------------------------------------------------
@@ -76,19 +83,20 @@ def test_project_detail(client: TestClient) -> None:
     assert body["name"] == "Bayterek"
     assert body["document_count"] == len(body["documents"])
     assert all("document_type" in d for d in body["documents"])
+    assert body["meta"]["review_priority_score"] == 26.0
 
 
 def test_project_summary_has_four_pillars(client: TestClient) -> None:
     body = client.get(f"/api/projects/{BAYTEREK}/summary").json()
     pillars = {p["pillar_id"]: p for p in body["pillars"]}
     assert set(pillars) == {"P1", "P2", "P3", "P4"}
-    assert body["integrated_risk_available"] is False
-    assert "следующий этап" in body["integrated_risk_note"]
-    # P4 is now implemented; spatial/cartographic analysis moved to the P5
-    # roadmap slot, integrated risk stays META.
+    assert body["meta_available"] is True
+    assert body["integrated_risk_available"] is True  # compatibility alias
+    assert "не вероятность нарушения" in body["integrated_risk_note"]
+    # Meta is now a project-level assessment, not a finding pillar or roadmap
+    # item. P5 visual/spatial and P6 contextual analysis remain roadmap slots.
     reserved = {p["pillar_id"] for p in body["reserved_pillars"]}
-    assert "P5" in reserved and "META" in reserved
-    assert "P4" not in reserved
+    assert reserved == {"P5", "P6"}
     assert all(p["available"] is False for p in body["reserved_pillars"])
 
 
@@ -100,11 +108,91 @@ def test_summary_has_no_fabricated_risk_fields(client: TestClient) -> None:
         assert pillar["calibrated_risk"] is None
         assert pillar["model_score"] is None
         assert pillar["shap_contributions"] is None
+    meta = body["meta"]
+    assert meta["calibration_status"] == "not_available_without_expert_labels"
+    assert meta["calibrated_probability"] is None
+    assert meta["shap_contributions"] is None
+    assert meta["experimental_test_only"] is False
 
 
 def test_pillars_endpoint_matches_summary(client: TestClient) -> None:
     pillars = client.get(f"/api/projects/{BEREKE}/pillars").json()
     assert [p["pillar_id"] for p in pillars] == ["P1", "P2", "P3", "P4"]
+
+
+# --- Meta integrated review priority ----------------------------------------
+
+
+def test_project_list_is_ordered_by_meta_priority(client: TestClient) -> None:
+    projects = client.get("/api/projects").json()
+    scores = [project["meta"]["review_priority_score"] for project in projects]
+    assert scores == sorted(scores, reverse=True)
+    assert projects[0]["project_id"] == BAYTEREK
+    assert scores == [26.0, 14.72, 14.35, 13.15]
+
+
+def test_meta_exact_additive_decomposition(client: TestClient) -> None:
+    meta = client.get(f"/api/projects/{BAYTEREK}/summary").json()["meta"]
+    feature_total = sum(item["contribution"] for item in meta["feature_contributions"])
+    expected = (
+        meta["base_score"]
+        + feature_total
+        + meta["uncertainty_adjustment"]
+        + meta["global_cap_adjustment"]
+    )
+    assert expected == pytest.approx(meta["review_priority_score"], abs=1e-9)
+    assert meta["final_score"] == meta["review_priority_score"]
+    for pillar in meta["pillar_contributions"]:
+        assert (
+            pillar["raw_subtotal"] + pillar["discount_amount"] + pillar["cap_amount"]
+        ) == pytest.approx(pillar["adjusted_subtotal"], abs=1e-9)
+
+
+def test_meta_p2_synthetic_discount_and_cap_are_visible(client: TestClient) -> None:
+    meta = client.get(f"/api/projects/{BAYTEREK}/summary").json()["meta"]
+    p2 = next(item for item in meta["pillar_contributions"] if item["pillar_id"] == "P2")
+    assert p2["raw_subtotal"] == 20.0
+    assert p2["discount_factor"] == 0.35
+    assert p2["discount_amount"] == -13.0
+    assert p2["cap"] == 8.0
+    assert p2["cap_amount"] == 0.0
+    assert p2["adjusted_subtotal"] == 7.0
+    assert p2["discount_applied"] is True
+    assert p2["cap_applied"] is False
+    p2_cap = next(item for item in meta["caps_applied"] if item["pillar_id"] == "P2")
+    assert p2_cap["config_key"] == "p2_synthetic_cap"
+    assert p2_cap["applied"] is False
+
+
+def test_meta_factors_preserve_evidence_ids(client: TestClient) -> None:
+    meta = client.get(f"/api/projects/{BAYTEREK}/summary").json()["meta"]
+    strongest = meta["top_positive_factors"][0]
+    assert strongest["pillar_id"] == "P1"
+    assert strongest["contribution"] == 9.0
+    assert strongest["feature_id"].startswith("META_F__")
+    assert strongest["contribution_id"].startswith("META_FC__")
+    assert strongest["source_finding_ids"]
+    assert all(source_id.startswith("P1__") for source_id in strongest["source_finding_ids"])
+
+
+def test_meta_separates_score_coverage_and_confidence(client: TestClient) -> None:
+    for project in client.get("/api/projects").json():
+        meta = project["meta"]
+        assert 0 <= meta["review_priority_score"] <= 100
+        assert 0 <= meta["evidence_coverage"] <= 1
+        assert 0 <= meta["assessment_confidence"] <= 1
+        assert meta["evidence_coverage"] != meta["assessment_confidence"]
+        assert meta["review_notice"].startswith("Это приоритет экспертной проверки")
+
+
+def test_meta_has_no_fake_probability_or_shap(client: TestClient) -> None:
+    for project in client.get("/api/projects").json():
+        meta = project["meta"]
+        assert meta["calibration_status"] == "not_available_without_expert_labels"
+        assert meta["calibrated_probability"] is None
+        assert meta["shap_contributions"] is None
+        assert meta["experimental_test_only"] is False
+        assert any("SHAP" in limitation for limitation in meta["limitations"])
 
 
 # --- P2 demo honesty ---------------------------------------------------------
@@ -292,9 +380,8 @@ def test_findings_arbitrary_pillar_returns_404(client: TestClient) -> None:
 
 
 def test_findings_roadmap_pillars_rejected_as_filters(client: TestClient) -> None:
-    # Roadmap pillars exist in the contract but are NOT selectable filters.
-    # (P4 is now implemented and selectable; P5/META remain roadmap.)
-    for pillar in ("p5", "meta"):
+    # Roadmap pillars and project-level Meta are NOT selectable finding filters.
+    for pillar in ("p5", "p6", "meta"):
         response = client.get(f"/api/projects/{BAYTEREK}/findings?pillar={pillar}")
         assert response.status_code == 404, pillar
         assert response.json()["error"] == "pillar_not_found"
@@ -332,6 +419,18 @@ def test_report_markdown_demo(client: TestClient) -> None:
 def test_report_p3_empty_state(client: TestClient) -> None:
     body = client.get(f"/api/projects/{BEREKE}/reports/p3").json()
     assert "не обнаружено" in body["content"]
+
+
+def test_report_meta_review_priority(client: TestClient) -> None:
+    body = client.get(f"/api/projects/{BAYTEREK}/reports/meta").json()
+    assert body["pillar"] == "meta"
+    assert body["is_demo"] is False
+    assert "Интегральная приоритетность проверки" in body["content"]
+    assert "не вероятность нарушения" in body["content"]
+    assert "Настроенный максимальный вклад P2 — 8 баллов" in body["content"]
+    assert "Уровень: умеренная" in body["content"]
+    assert "недоступна без достаточной экспертной разметки" in body["content"]
+    assert "p2_synthetic_cap" not in body["content"]
 
 
 # --- error handling ----------------------------------------------------------

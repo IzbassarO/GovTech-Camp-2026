@@ -1,20 +1,28 @@
 """API response contracts.
 
 These are the STABLE shapes the frontend depends on. They are normalized
-away from the on-disk pillar artifacts so that:
+away from the on-disk pillar and Meta artifacts so that:
 
-- adding a future pillar (P4/P5/P6, meta-risk) requires no shape change;
-- optional future fields (calibrated_risk, model_score, graph, map,
-  provider metadata) are reserved as ``None`` and never fabricated.
+- adding a future analysis pillar does not leak its raw artifact shape;
+- Meta review priority is separate from findings and from legal risk;
+- unsupported probability/model fields remain ``None`` and are never fabricated.
 
 Nothing here carries filesystem paths, secrets or Python object dumps.
 """
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 Severity = str  # "high" | "medium" | "low" | "info"
+MetaPillarId = Literal["P1", "P2", "P3", "P4"]
+ReviewPriorityLevel = Literal["low", "moderate", "elevated", "high"]
+ScoreAdjustmentType = Literal["discount", "cap", "uncertainty"]
+CalibrationStatus = Literal[
+    "not_available_without_expert_labels", "experimental_test_only", "available"
+]
 
 
 class SeverityCounts(BaseModel):
@@ -37,6 +45,7 @@ class HealthResponse(BaseModel):
     api_version: str
     projects_available: int
     pillars_available: list[str]
+    meta_available: bool = False
     data_ready: bool
 
 
@@ -116,6 +125,101 @@ class DocumentInfo(BaseModel):
     finding_counts: SeverityCounts = Field(default_factory=SeverityCounts)
 
 
+class MetaScoreAdjustment(BaseModel):
+    """One exact cap, discount or uncertainty adjustment."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    amount: float
+    explanation: str
+    pillar_id: MetaPillarId | None = None
+    adjustment_id: str | None = None
+    adjustment_type: ScoreAdjustmentType | None = None
+    applied: bool = True
+    config_key: str | None = None
+
+
+class MetaFeatureContribution(BaseModel):
+    """Evidence-traceable deterministic feature contribution (not SHAP)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contribution_id: str
+    feature_id: str
+    feature_name: str
+    pillar_id: MetaPillarId
+    raw_value: float | int | bool | str | None = None
+    normalized_value: float
+    weight: float
+    raw_contribution: float
+    contribution: float
+    source_artifact_ids: list[str] = Field(default_factory=list)
+    source_finding_ids: list[str] = Field(default_factory=list)
+    explanation: str
+    limitations: list[str] = Field(default_factory=list)
+    adjustments: list[str] = Field(default_factory=list)
+
+
+class MetaPillarContribution(BaseModel):
+    """Exact subtotal for one P1–P4 source pillar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    contribution_id: str
+    pillar_id: MetaPillarId
+    available: bool
+    raw_subtotal: float
+    adjusted_subtotal: float
+    discount_factor: float
+    cap_applied: bool = False
+    discount_applied: bool = False
+    cap_amount: float = 0.0
+    discount_amount: float = 0.0
+    cap: float = 0.0
+    evidence_coverage: float = 0.0
+    assessment_confidence: float = 0.0
+    feature_contribution_ids: list[str] = Field(default_factory=list)
+    explanation: str
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ProjectMetaAssessment(BaseModel):
+    """Integrated project-level expert-review priority, never legal risk."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    assessment_id: str
+    project_id: str
+    meta_version: str
+    primary_label: str
+    review_priority_score: float = Field(ge=0, le=100)
+    review_priority_level: ReviewPriorityLevel
+    base_score: float
+    raw_feature_total: float
+    uncertainty_adjustment: float
+    global_cap_adjustment: float
+    final_score: float = Field(ge=0, le=100)
+    evidence_coverage: float = Field(ge=0, le=1)
+    assessment_confidence: float = Field(ge=0, le=1)
+    pillar_contributions: list[MetaPillarContribution] = Field(default_factory=list)
+    feature_contributions: list[MetaFeatureContribution] = Field(default_factory=list)
+    top_positive_factors: list[MetaFeatureContribution] = Field(default_factory=list)
+    caps_applied: list[MetaScoreAdjustment] = Field(default_factory=list)
+    discounts_applied: list[MetaScoreAdjustment] = Field(default_factory=list)
+    uncertainty_adjustments: list[MetaScoreAdjustment] = Field(default_factory=list)
+    available_pillars: list[str] = Field(default_factory=list)
+    missing_pillars: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    counterfactual_explanation: str
+    calibration_status: CalibrationStatus
+    calibrated_probability: float | None = None
+    shap_contributions: list[dict[str, float]] | None = None
+    experimental_test_only: bool = False
+    scoring_config_version: str | None = None
+    review_notice: str
+
+
 class ProjectListItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -129,6 +233,7 @@ class ProjectListItem(BaseModel):
     pillar_finding_counts: dict[str, int]  # key -> count
     has_demo_pillar: bool
     dataset_version: str
+    meta: ProjectMetaAssessment | None = None
 
 
 class ProjectDetail(BaseModel):
@@ -144,6 +249,7 @@ class ProjectDetail(BaseModel):
     documents: list[DocumentInfo]
     findings_total: int
     severity_counts: SeverityCounts
+    meta: ProjectMetaAssessment | None = None
 
 
 class ProjectSummary(BaseModel):
@@ -158,6 +264,10 @@ class ProjectSummary(BaseModel):
     severity_counts: SeverityCounts
     pillars: list[PillarSummary]
     reserved_pillars: list[ReservedPillar]
+    meta: ProjectMetaAssessment | None = None
+    meta_available: bool = False
+    # Compatibility aliases retained for the accepted frontend contract.
+    # They now describe availability only; ``meta`` carries the honest score.
     integrated_risk_available: bool = False
     integrated_risk_note: str
 
@@ -328,6 +438,9 @@ class SystemMetrics(BaseModel):
     findings_by_pillar: dict[str, int]
     severity_counts: SeverityCounts
     pillars: list[dict[str, object]]
+    meta_available: bool = False
+    meta_projects_assessed: int = 0
+    meta_metrics: dict[str, object] | None = None
 
 
 class ErrorResponse(BaseModel):

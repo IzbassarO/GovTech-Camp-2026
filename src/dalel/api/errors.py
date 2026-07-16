@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from dalel.api.repository import ArtifactStore, PillarArtifacts
+from dalel.api.repository import ArtifactStore, MetaArtifacts, PillarArtifacts
 
 
 class ApiError(Exception):
@@ -47,11 +47,23 @@ def require_pillar(store: ArtifactStore, pillar_key: str) -> PillarArtifacts:
 
 def require_pillar_filter(store: ArtifactStore, pillar_key: str) -> str:
     """Validate a ``?pillar=`` finding filter against the available,
-    implemented pillars (p1/p2/p3). Unknown or unavailable values — including
-    roadmap pillars (p4/meta) and arbitrary strings — get a clean 404.
+    implemented finding pillars (P1–P4). Unknown or unavailable values —
+    including roadmap P5/P6, project-level Meta and arbitrary strings — get a
+    clean 404.
     Returns the normalized (lower-case) key."""
     normalized = pillar_key.strip().lower()
     pillar = store.pillar(normalized)
     if pillar is None or not pillar.available or not pillar.descriptor.implemented:
         raise ApiError(404, "pillar_not_found", f"Unknown pillar: {pillar_key}")
     return normalized
+
+
+def require_meta(store: ArtifactStore) -> MetaArtifacts:
+    """Require the complete project-level Meta artifact bundle."""
+    if not store.meta.available:
+        raise ApiError(
+            404,
+            "meta_not_available",
+            "Интегральная приоритетность проверки пока недоступна.",
+        )
+    return store.meta

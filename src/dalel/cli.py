@@ -1,12 +1,13 @@
-"""``dalel`` CLI: validate-manifest, inspect, ingest.
+"""``dalel`` CLI for ingestion, deterministic pillars and Meta review priority.
 
 ``validate-manifest`` and ``inspect`` are import-light and never touch
-Docling. ``ingest`` imports the pipeline lazily and warns about the one-time
-Docling/EasyOCR model download before the first conversion.
+Docling. Analysis commands import their pipelines lazily; ``ingest`` warns
+about the one-time Docling/EasyOCR model download before first conversion.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Annotated
@@ -17,7 +18,7 @@ from dalel.config import OcrMode, derive_repo_root
 
 app = typer.Typer(
     name="dalel",
-    help="DALEL Eco Phase 0: local document ingestion.",
+    help="DALEL Eco: deterministic document analysis and expert-review prioritization.",
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
 )
@@ -360,6 +361,7 @@ def run_p1_command(
 
 
 _SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3}
+_META_LEVEL_RANK = {"low": 0, "moderate": 1, "elevated": 2, "high": 3}
 
 
 @app.command("run-p3")
@@ -695,6 +697,153 @@ def validate_p3_command(
     typer.echo(f"Errors: {len(result.errors)}")
     typer.echo(f"P3 outputs status: {'VALID' if result.ok else 'INVALID'}")
     raise typer.Exit(code=0 if result.ok else 1)
+
+
+def _read_meta_cli_assessments(output: Path) -> list[dict[str, object]]:
+    path = output / "project_assessments.jsonl"
+    records: list[dict[str, object]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError(f"{path.name}:{line_number}: expected a JSON object")
+            records.append(record)
+    return records
+
+
+def _meta_score(record: dict[str, object]) -> float:
+    value = record.get("review_priority_score", record.get("final_score", 0))
+    return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def _meta_level(record: dict[str, object]) -> str:
+    return str(record.get("review_priority_level", record.get("level", "unknown")))
+
+
+@app.command("run-meta")
+def run_meta_command(
+    p1: Annotated[Path, typer.Option("--p1", help="P1 results directory (read-only).")] = Path(
+        "data/results/p1/v1"
+    ),
+    p2: Annotated[Path, typer.Option("--p2", help="P2 results directory (read-only).")] = Path(
+        "data/results/p2/v1"
+    ),
+    p3: Annotated[Path, typer.Option("--p3", help="P3 results directory (read-only).")] = Path(
+        "data/results/p3/v1"
+    ),
+    p4: Annotated[Path, typer.Option("--p4", help="P4 results directory (read-only).")] = Path(
+        "data/results/p4/v1"
+    ),
+    output: Annotated[Path, typer.Option("--output", help="Meta results output directory.")] = Path(
+        "data/results/meta/v1"
+    ),
+    fail_on: Annotated[
+        str | None,
+        typer.Option(
+            "--fail-on",
+            help="Exit nonzero when a project reaches this review-priority level"
+            " (low, moderate, elevated or high).",
+        ),
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Combine accepted P1–P4 artifacts into deterministic review priority."""
+    _setup_logging(verbose)
+    from dalel.meta_review.pipeline import MetaRunError, run_meta
+
+    if fail_on is not None and fail_on not in _META_LEVEL_RANK:
+        typer.secho(
+            f"ERROR: --fail-on must be one of {', '.join(_META_LEVEL_RANK)}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
+
+    try:
+        run_meta(p1, p2, p3, p4, output)
+        assessments = _read_meta_cli_assessments(output)
+    except (MetaRunError, ValueError, OSError) as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    ordered = sorted(
+        assessments,
+        key=lambda record: (-_meta_score(record), str(record.get("project_id", ""))),
+    )
+    typer.echo(f"Meta complete: projects={len(ordered)}")
+    for record in ordered:
+        typer.echo(
+            f"{record.get('project_id', 'unknown')}: score={_meta_score(record):g}"
+            f" level={_meta_level(record)}"
+            f" coverage={record.get('evidence_coverage', 'n/a')}"
+            f" confidence={record.get('assessment_confidence', 'n/a')}"
+        )
+    typer.secho(
+        "P2 contribution is discounted and bounded by a configured cap:"
+        " the regulatory corpus is synthetic and non-authoritative.",
+        fg=typer.colors.YELLOW,
+    )
+    typer.echo("Calibration/SHAP: unavailable without sufficient expert labels.")
+    typer.echo(f"Outputs: {output}")
+
+    if fail_on is not None:
+        threshold = _META_LEVEL_RANK[fail_on]
+        hits = [
+            record
+            for record in ordered
+            if _META_LEVEL_RANK.get(_meta_level(record), -1) >= threshold
+        ]
+        if hits:
+            typer.secho(
+                f"FAIL-ON: {len(hits)} project(s) at review priority >= {fail_on}",
+                fg=typer.colors.YELLOW,
+            )
+            raise typer.Exit(code=1)
+
+
+@app.command("validate-meta")
+def validate_meta_command(
+    p1: Annotated[Path, typer.Option("--p1", help="P1 results directory (read-only).")] = Path(
+        "data/results/p1/v1"
+    ),
+    p2: Annotated[Path, typer.Option("--p2", help="P2 results directory (read-only).")] = Path(
+        "data/results/p2/v1"
+    ),
+    p3: Annotated[Path, typer.Option("--p3", help="P3 results directory (read-only).")] = Path(
+        "data/results/p3/v1"
+    ),
+    p4: Annotated[Path, typer.Option("--p4", help="P4 results directory (read-only).")] = Path(
+        "data/results/p4/v1"
+    ),
+    output: Annotated[Path, typer.Option("--output", help="Meta results directory.")] = Path(
+        "data/results/meta/v1"
+    ),
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Independently replay and validate the deterministic Meta artifacts."""
+    _setup_logging(verbose)
+    from dalel.meta_review.pipeline import MetaRunError
+    from dalel.meta_review.validation import validate_meta
+
+    try:
+        result = validate_meta(p1, p2, p3, p4, output)
+    except (MetaRunError, ValueError, OSError) as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    errors = list(getattr(result, "errors", []))
+    warnings = list(getattr(result, "warnings", []))
+    counts = getattr(result, "counts", {})
+    ok = bool(getattr(result, "ok", not errors))
+    for error in errors:
+        typer.secho(f"ERROR: {error}", fg=typer.colors.RED)
+    for warning in warnings:
+        typer.secho(f"WARNING: {warning}", fg=typer.colors.YELLOW)
+    typer.echo(f"Counts: {counts}")
+    typer.echo(f"Errors: {len(errors)}")
+    typer.echo(f"Meta outputs status: {'VALID' if ok else 'INVALID'}")
+    raise typer.Exit(code=0 if ok else 1)
 
 
 def main() -> None:

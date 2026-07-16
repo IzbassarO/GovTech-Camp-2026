@@ -1,4 +1,4 @@
-import type { Severity } from "./types";
+import type { ProjectListItem, ReviewPriorityLevel, Severity } from "./types";
 
 export const SEVERITY_LABEL: Record<Severity, string> = {
   high: "Высокая",
@@ -23,6 +23,54 @@ export const SEVERITY_DOT: Record<Severity, string> = {
 };
 
 export const SEVERITY_ORDER: Severity[] = ["high", "medium", "low", "info"];
+
+export const REVIEW_PRIORITY_LABEL: Record<ReviewPriorityLevel, string> = {
+  low: "Низкая",
+  moderate: "Умеренная",
+  elevated: "Повышенная",
+  high: "Высокая",
+};
+
+export const REVIEW_PRIORITY_STYLE: Record<ReviewPriorityLevel, string> = {
+  low: "bg-accent-50 text-accent-700 ring-1 ring-inset ring-accent-100",
+  moderate: "bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200",
+  elevated: "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200",
+  high: "bg-red-50 text-red-800 ring-1 ring-inset ring-red-200",
+};
+
+export function reviewPriorityLabel(level: string): string {
+  return level in REVIEW_PRIORITY_LABEL
+    ? REVIEW_PRIORITY_LABEL[level as ReviewPriorityLevel]
+    : "Не определена";
+}
+
+export function reviewPriorityStyle(level: string): string {
+  return level in REVIEW_PRIORITY_STYLE
+    ? REVIEW_PRIORITY_STYLE[level as ReviewPriorityLevel]
+    : "bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200";
+}
+
+export function assessmentPercent(value: number): number {
+  const percent = value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, percent));
+}
+
+export function formatMetaNumber(value: number, maximumFractionDigits = 2): string {
+  return value.toLocaleString("ru-RU", { maximumFractionDigits });
+}
+
+export function rankProjectsByMeta(projects: ProjectListItem[]): ProjectListItem[] {
+  return [...projects].sort((left, right) => {
+    const leftScore = left.meta?.review_priority_score;
+    const rightScore = right.meta?.review_priority_score;
+    if (leftScore == null && rightScore != null) return 1;
+    if (leftScore != null && rightScore == null) return -1;
+    if (leftScore != null && rightScore != null && leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+    return left.project_id < right.project_id ? -1 : left.project_id > right.project_id ? 1 : 0;
+  });
+}
 
 export type PillarStatus = "clear" | "attention" | "info" | "unavailable";
 

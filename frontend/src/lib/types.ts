@@ -1,6 +1,6 @@
-// API contract types. Mirror src/dalel/api/schemas.py. Optional future
-// fields (calibrated_risk, model_score, ...) are typed but never rendered
-// until the backend populates them.
+// API contract types. Mirror src/dalel/api/schemas.py. The Meta contract is
+// deliberately separate from findings: it ranks packages for expert review,
+// but does not claim a probability of violation or a legal conclusion.
 
 export type Severity = "high" | "medium" | "low" | "info";
 
@@ -11,11 +11,93 @@ export interface SeverityCounts {
   info: number;
 }
 
+export type ReviewPriorityLevel = "low" | "moderate" | "elevated" | "high";
+
+export interface MetaFeatureContribution {
+  contribution_id: string;
+  feature_id: string;
+  feature_name: string;
+  pillar_id: string;
+  raw_value: number | boolean | string | null;
+  normalized_value: number;
+  weight: number;
+  raw_contribution: number;
+  contribution: number;
+  source_artifact_ids: string[];
+  source_finding_ids: string[];
+  explanation: string;
+  limitations: string[];
+  adjustments: string[];
+}
+
+export interface MetaPillarContribution {
+  contribution_id: string;
+  pillar_id: string;
+  available: boolean;
+  raw_subtotal: number;
+  adjusted_subtotal: number;
+  discount_factor: number;
+  cap_applied: boolean;
+  discount_applied: boolean;
+  cap_amount: number;
+  discount_amount: number;
+  cap: number;
+  evidence_coverage: number;
+  assessment_confidence: number;
+  feature_contribution_ids: string[];
+  explanation: string;
+  limitations: string[];
+}
+
+export interface MetaAdjustment {
+  name: string;
+  amount: number;
+  explanation: string;
+  pillar_id: string | null;
+  adjustment_id: string | null;
+  adjustment_type: string | null;
+  applied: boolean;
+  config_key: string | null;
+}
+
+export interface ProjectMetaAssessment {
+  assessment_id: string;
+  project_id: string;
+  meta_version: string;
+  primary_label: string;
+  review_priority_score: number;
+  review_priority_level: ReviewPriorityLevel;
+  base_score: number;
+  raw_feature_total: number;
+  uncertainty_adjustment: number;
+  global_cap_adjustment: number;
+  final_score: number;
+  evidence_coverage: number;
+  assessment_confidence: number;
+  pillar_contributions: MetaPillarContribution[];
+  feature_contributions: MetaFeatureContribution[];
+  top_positive_factors: MetaFeatureContribution[];
+  caps_applied: MetaAdjustment[];
+  discounts_applied: MetaAdjustment[];
+  uncertainty_adjustments: MetaAdjustment[];
+  available_pillars: string[];
+  missing_pillars: string[];
+  limitations: string[];
+  counterfactual_explanation: string;
+  calibration_status: string;
+  calibrated_probability: number | null;
+  shap_contributions: Array<Record<string, number>> | null;
+  experimental_test_only: boolean;
+  scoring_config_version: string | null;
+  review_notice: string;
+}
+
 export interface HealthResponse {
   status: string;
   api_version: string;
   projects_available: number;
   pillars_available: string[];
+  meta_available: boolean;
   data_ready: boolean;
 }
 
@@ -165,6 +247,7 @@ export interface ProjectListItem {
   pillar_finding_counts: Record<string, number>;
   has_demo_pillar: boolean;
   dataset_version: string;
+  meta: ProjectMetaAssessment | null;
 }
 
 export interface ProjectDetail {
@@ -178,6 +261,7 @@ export interface ProjectDetail {
   documents: DocumentInfo[];
   findings_total: number;
   severity_counts: SeverityCounts;
+  meta: ProjectMetaAssessment | null;
 }
 
 export interface ProjectSummary {
@@ -190,6 +274,9 @@ export interface ProjectSummary {
   severity_counts: SeverityCounts;
   pillars: PillarSummary[];
   reserved_pillars: ReservedPillar[];
+  meta: ProjectMetaAssessment | null;
+  meta_available: boolean;
+  // Deprecated compatibility fields from the pre-Meta API.
   integrated_risk_available: boolean;
   integrated_risk_note: string;
 }
@@ -291,6 +378,9 @@ export interface SystemMetrics {
   findings_by_pillar: Record<string, number>;
   severity_counts: SeverityCounts;
   pillars: Array<Record<string, unknown>>;
+  meta_available: boolean;
+  meta_projects_assessed: number;
+  meta_metrics: Record<string, unknown> | null;
 }
 
 export interface ReportResponse {

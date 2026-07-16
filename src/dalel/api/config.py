@@ -42,8 +42,10 @@ class PillarDescriptor:
     """Static, presentation-level description of one analysis pillar.
 
     ``available`` is resolved at load time from whether the artifacts
-    exist; everything else is stable metadata. Future pillars are added
-    by appending descriptors — the API/frontend contract does not change.
+    exist; everything else is stable metadata. Analysis pillars are added
+    by appending descriptors. The integrated Meta assessment is deliberately
+    loaded separately because it is a project-level synthesis, not another
+    source of findings.
     """
 
     pillar_id: str  # "P1" | "P2" | "P3" | future "P4"...
@@ -133,19 +135,24 @@ RESERVED_PILLARS: tuple[dict[str, str], ...] = (
     {
         "pillar_id": "P5",
         "key": "p5",
-        "title": "Пространственный и картографический анализ",
-        "description": "Геопривязка объектов и зон воздействия — следующий этап.",
+        "title": "Визуальные и пространственные свидетельства",
+        "description": "Карты, схемы, изображения и геопривязка объектов — будущий этап.",
     },
     {
-        "pillar_id": "META",
-        "key": "meta",
-        "title": "Интегральная оценка риска",
-        "description": (
-            "Калиброванная сводная оценка на основе всех пилларов —"
-            " следующий этап. Сейчас интегральный риск не рассчитывается."
-        ),
+        "pillar_id": "P6",
+        "key": "p6",
+        "title": "Контекст экологической чувствительности",
+        "description": ("Внешний геопространственный и экологический контекст — будущий этап."),
     },
 )
+
+# Meta is not registered in ``PILLARS``: it synthesizes P1–P4 and must not
+# appear in finding filters. These constants define only its artifact and
+# presentation contract.
+META_KEY = "meta"
+META_ID = "META"
+META_RESULTS_SUBDIR = "meta/v1"
+META_TITLE = "Интегральная приоритетность проверки"
 
 
 @dataclass(frozen=True)

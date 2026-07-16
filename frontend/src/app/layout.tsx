@@ -8,7 +8,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Dalel — доказательный анализ экологической документации",
   description:
-    "BizAI / Dalel — AI-платформа доказательного анализа экологической документации. Демонстрация результатов P1/P2/P3.",
+    "BizAI / Dalel — доказательный анализ P1–P4 и интегральная приоритетность экспертной проверки.",
 };
 
 export default function RootLayout({

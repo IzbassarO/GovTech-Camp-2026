@@ -1,14 +1,13 @@
 """DÁLEL Eco demo website API.
 
-A thin, read-only FastAPI layer over the ALREADY ACCEPTED pillar
-artifacts (P1 Document Integrity, P2 Regulatory Compliance demo,
-P3 Quantitative Consistency). It never re-runs analysis, never mutates
-curated data, and never exposes local filesystem paths or secrets — it
-normalizes on-disk artifacts into stable frontend contracts.
+A thin, read-only FastAPI layer over the accepted P1–P4 pillar artifacts
+and the validated project-level Meta review-priority assessment. It never
+mutates curated or pillar data and never exposes local filesystem paths or
+secrets; Meta validation is replayed once while the artifact store loads.
 
-The pillar contract is intentionally generic so future pillars
-(P4 / P5 / P6, integrated meta-risk scoring) can be added at the service
-layer without changing the API shape or the frontend.
+Meta remains separate from finding filters because it synthesizes accepted
+evidence rather than creating a fifth class of findings. P5 and P6 remain
+explicitly unavailable roadmap phases.
 """
 
 API_VERSION = "1.0.0"

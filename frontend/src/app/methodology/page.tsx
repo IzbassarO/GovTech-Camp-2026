@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FileText, Network, Scale, Sigma } from "lucide-react";
+import { FileText, Gauge, Network, Scale, Sigma } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Методология — Dalel",
@@ -141,15 +141,39 @@ export default function MethodologyPage() {
             </p>
           </div>
         </div>
+
+        <div className="flex items-start gap-4 rounded-xl border border-accent-100 bg-accent-50/40 p-5">
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent-700 text-white">
+            <Gauge className="h-5 w-5" aria-hidden />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Meta · Интегральная приоритетность проверки
+            </h3>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">
+              Объединяет принятые свидетельства P1–P4 в воспроизводимый балл от
+              0 до 100 и показывает точный вклад каждого фактора. Покрытие
+              доказательств и уверенность рассчитываются отдельно; отсутствие
+              замечаний P3/P4 не даёт «бонуса безопасности». Вклад P2 ограничен,
+              поскольку нормативный корпус демонстрационный. Это порядок
+              экспертной проверки, а не вероятность нарушения или
+              административное решение.
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              Калиброванная вероятность и SHAP недоступны без достаточного числа
+              реальных экспертных меток. В интерфейсе используются только точные
+              вклады детерминированного алгоритма.
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-6">
         <h2 className="text-base font-semibold text-slate-700">Следующие этапы</h2>
         <p className="mt-2 text-sm leading-relaxed text-slate-500">
           Пространственный и картографический анализ (геопривязка объектов и зон
-          воздействия) и интегральная оценка риска на основе всех пилларов — в
-          разработке (P5/P6, META). Сейчас сводная калиброванная оценка риска не
-          рассчитывается и не отображается.
+          воздействия) остаётся в разработке (P5/P6). Он не подменяется текущим
+          междокументным или Meta-анализом.
         </p>
       </div>
     </div>

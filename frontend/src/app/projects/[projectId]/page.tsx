@@ -7,8 +7,14 @@ import { ArrowLeft, Building2, ExternalLink, FileText, MapPin } from "lucide-rea
 
 import type { ProjectDetail, ProjectSummary } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
-import { SEVERITY_LABEL, SEVERITY_ORDER } from "@/lib/ui";
 import {
+  formatMetaNumber,
+  reviewPriorityLabel,
+  SEVERITY_LABEL,
+  SEVERITY_ORDER,
+} from "@/lib/ui";
+import {
+  EmptyState,
   ErrorBlock,
   LoadingBlock,
   Section,
@@ -19,6 +25,7 @@ import { FindingsExplorer } from "@/components/FindingsExplorer";
 import { ReportModal } from "@/components/ReportModal";
 import { DocumentsTable } from "@/components/DocumentsTable";
 import { CoherenceView } from "@/components/CoherenceView";
+import { MetaAssessmentView } from "@/components/MetaAssessmentView";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
@@ -100,7 +107,9 @@ export default function ProjectDetailPage() {
                 </span>
               ))}
               <span className="ml-auto rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-500">
-                {s.integrated_risk_note}
+                {s.meta
+                  ? `Meta: ${formatMetaNumber(s.meta.review_priority_score)}/100 · ${reviewPriorityLabel(s.meta.review_priority_level)}`
+                  : "Meta-оценка недоступна"}
               </span>
             </div>
           </header>
@@ -108,8 +117,28 @@ export default function ProjectDetailPage() {
       </div>
 
       <Section
+        title="Интегральная приоритетность проверки"
+        description={
+          s && !s.meta
+            ? "Для этого проекта нет валидного Meta-артефакта."
+            : "Прозрачная детерминированная оценка пакета по принятым результатам P1–P4."
+        }
+      >
+        {summary.loading || !s ? (
+          <SkeletonCard />
+        ) : s.meta ? (
+          <MetaAssessmentView meta={s.meta} />
+        ) : (
+          <EmptyState
+            title="Интегральная оценка пока недоступна"
+            hint="Для проекта нет валидного Meta-артефакта. Отсутствие оценки не означает низкий приоритет или безопасность."
+          />
+        )}
+      </Section>
+
+      <Section
         title="Пиллары анализа"
-        description="Каждый пиллар оценивает отдельный аспект. Интегральная оценка не рассчитывается."
+        description="Каждый пиллар оценивает отдельный аспект и сохраняет собственные доказательства и ограничения."
       >
         {summary.loading || !s ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -126,7 +155,7 @@ export default function ProjectDetailPage() {
               ))}
             </div>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {s.reserved_pillars.map((rp) => (
+              {s.reserved_pillars.filter((rp) => rp.key !== "meta").map((rp) => (
                 <div
                   key={rp.key}
                   className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4"
@@ -179,6 +208,24 @@ export default function ProjectDetailPage() {
       {s ? (
         <Section title="Отчёты и ограничения">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {s.meta ? (
+              <div className="card flex flex-col border-accent-100 p-5">
+                <p className="text-sm font-semibold text-slate-900">
+                  Meta · Приоритет проверки
+                </p>
+                <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-500">
+                  Итог P1–P4, точные вклады факторов, покрытие, уверенность и
+                  ограничения оценки.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setReportPillar("meta")}
+                  className="btn-ghost mt-4 self-start"
+                >
+                  Открыть отчёт
+                </button>
+              </div>
+            ) : null}
             {s.pillars.map((pillar) => (
               <div key={pillar.key} className="card flex flex-col p-5">
                 <p className="text-sm font-semibold text-slate-900">{pillar.title}</p>
