@@ -1,8 +1,9 @@
 # Dalel — Demo Website (BizAI)
 
 Frontend for the DÁLEL Eco demo: visualizes the accepted **P1 Document
-Integrity**, **P2 Regulatory Compliance (demo)** and **P3 Quantitative
-Consistency** results. Read-only, Russian-language UI, evidence-first.
+Integrity**, **P2 Regulatory Compliance (demo)**, **P3 Quantitative
+Consistency**, **P4 Cross-Document Coherence**, and deterministic **Meta Review
+Priority** results. Read-only, Russian-language UI, evidence-first.
 
 - Next.js 15 (App Router) · TypeScript (strict) · Tailwind CSS
 - No database, no auth, no LLM calls. Talks to the FastAPI layer over HTTP.
@@ -40,4 +41,6 @@ npm run dev                       # http://localhost:3000
 - Pages fetch on the client with loading / empty / error states, so the
   demo works fully offline against a local API — no network required.
 - The UI never claims legal compliance. P2 always shows the synthetic
-  demo-corpus notice; P3 shows an honest positive empty state.
+  demo-corpus notice; Meta is explicitly a review order rather than a
+  probability of violation. Calibration and SHAP stay unavailable until real
+  expert labels are sufficient.
