@@ -699,6 +699,99 @@ def validate_p3_command(
     raise typer.Exit(code=0 if result.ok else 1)
 
 
+@app.command("run-p5")
+def run_p5_command(
+    dataset: Annotated[
+        Path, typer.Option("--dataset", help="Curated dataset directory (read-only).")
+    ] = Path("data/curated/v1"),
+    output: Annotated[Path, typer.Option("--output", help="P5 results output directory.")] = Path(
+        "data/results/p5/v1"
+    ),
+    p3: Annotated[
+        Path, typer.Option("--p3", help="P3 results directory for quantitative context.")
+    ] = Path("data/results/p3/v1"),
+    p4: Annotated[
+        Path, typer.Option("--p4", help="P4 results directory for entity context.")
+    ] = Path("data/results/p4/v1"),
+    project_id: Annotated[
+        str | None, typer.Option("--project-id", help="Analyze only this project.")
+    ] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Run P5 Multimodal Visual Evidence (OpenCLIP + EasyOCR, CPU)."""
+    _setup_logging(verbose)
+    import time
+
+    typer.secho(
+        "NOTE: the first P5 run downloads the OpenCLIP multilingual weights"
+        " (~1.1 GB) into the Hugging Face cache and reuses the EasyOCR cache"
+        " (~100 MB). Without weights P5 degrades to an explicit"
+        " model-unavailable state.",
+        fg=typer.colors.YELLOW,
+    )
+    from dalel.pillars.multimodal_visual_evidence.pipeline import (
+        P5Options,
+        P5RunError,
+        run_p5,
+    )
+    from dalel.pillars.multimodal_visual_evidence.reports import summarize_for_cli
+
+    repo_root = dataset.resolve().parents[2] if len(dataset.resolve().parents) >= 3 else Path.cwd()
+    options = P5Options(
+        dataset_dir=dataset,
+        output_dir=output,
+        annotations_root=repo_root / "data" / "annotations",
+        project_id=project_id,
+        p3_dir=p3 if p3.is_dir() else None,
+        p4_dir=p4 if p4.is_dir() else None,
+    )
+    started = time.monotonic()
+    try:
+        result = run_p5(options)
+    except P5RunError as exc:
+        typer.secho(f"ERROR: {exc}", fg=typer.colors.RED)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(summarize_for_cli(result.metrics))
+    typer.echo(f"Elapsed: {time.monotonic() - started:.1f}s")
+    if result.metrics.get("model_status") != "available":
+        typer.secho(
+            "WARNING: vision-language model unavailable; visual classes were NOT"
+            " semantically assigned (honest degraded mode).",
+            fg=typer.colors.YELLOW,
+        )
+    if result.review_template_created:
+        typer.echo(f"Review template created: {result.review_template_path}")
+    else:
+        typer.echo(f"Review template updated (human decisions kept): {result.review_template_path}")
+    typer.echo(f"Outputs: {output}")
+
+
+@app.command("validate-p5")
+def validate_p5_command(
+    dataset: Annotated[
+        Path, typer.Option("--dataset", help="Curated dataset directory (read-only).")
+    ] = Path("data/curated/v1"),
+    output: Annotated[Path, typer.Option("--output", help="P5 results directory.")] = Path(
+        "data/results/p5/v1"
+    ),
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Validate P5 outputs: identity, clusters, decisions, findings, scores."""
+    _setup_logging(verbose)
+    from dalel.pillars.multimodal_visual_evidence.validation import validate_p5_outputs
+
+    result = validate_p5_outputs(dataset, output)
+    for error in result.errors:
+        typer.secho(f"ERROR: {error}", fg=typer.colors.RED)
+    for warning in result.warnings:
+        typer.secho(f"WARNING: {warning}", fg=typer.colors.YELLOW)
+    typer.echo(f"Counts: {result.counts}")
+    typer.echo(f"Errors: {len(result.errors)}")
+    typer.echo(f"P5 outputs status: {'VALID' if result.ok else 'INVALID'}")
+    raise typer.Exit(code=0 if result.ok else 1)
+
+
 def _read_meta_cli_assessments(output: Path) -> list[dict[str, object]]:
     path = output / "project_assessments.jsonl"
     records: list[dict[str, object]] = []

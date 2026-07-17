@@ -656,6 +656,7 @@ export type LiveJobStatus =
   | "running_p2"
   | "running_p3"
   | "running_p4"
+  | "running_p5"
   | "running_meta"
   | "completed"
   | "failed"
@@ -797,7 +798,9 @@ export interface LiveAnalysisResultPayload {
   inventory?: LiveResultInventory;
   preparation?: LivePreparationSummary;
   stages?: LiveStageProgress[];
-  pillars?: Partial<Record<"P1" | "P2" | "P3" | "P4", LivePillarResult>>;
+  pillars?: Partial<Record<"P1" | "P2" | "P3" | "P4", LivePillarResult>> & {
+    P5?: LiveP5Result;
+  };
   meta?: ProjectMetaAssessment | null;
   warnings?: string[];
   limitations?: string[];
@@ -817,7 +820,7 @@ export interface LiveJobResponse {
   result: LiveAnalysisResultPayload | null;
   failure_code: string | null;
   limitations: string[];
-  visual_analysis_status: "not_available";
+  visual_analysis_status: string;
   geospatial_analysis_status: "not_available";
   generated_explanation: null;
   generation_status: "not_available";
@@ -825,4 +828,113 @@ export interface LiveJobResponse {
 
 export interface LiveJobCreateResponse extends LiveJobResponse {
   access_token: string;
+}
+
+// --- P5 multimodal visual evidence -------------------------------------------
+
+export interface P5Summary {
+  total_asset_count: number;
+  assets_with_bytes_count: number;
+  eligible_asset_count: number;
+  analyzed_representative_count: number;
+  excluded_duplicate_count: number;
+  excluded_low_information_count: number;
+  excluded_header_or_logo_count: number;
+  unsupported_asset_count: number;
+  procedural_asset_count: number;
+  duplicate_cluster_count: number;
+  findings_count: number;
+  review_priority: number;
+  visual_coverage: number | null;
+  assessment_confidence: number | null;
+  model_status: string;
+}
+
+export interface P5ProjectResponse {
+  project_id: string;
+  available: boolean;
+  status_reason: string | null;
+  title: string;
+  score_label: string;
+  summary: P5Summary | null;
+  classifications_by_class: Record<string, number>;
+  findings_by_severity: Record<string, number>;
+  model_metadata: Record<string, unknown>;
+  meta_integration_status: string;
+  meta_integration_notice: string;
+  limitations: string[];
+}
+
+export type P5GalleryGroup =
+  | "maps"
+  | "site_photos"
+  | "diagrams"
+  | "charts_tables"
+  | "procedural"
+  | "excluded_duplicates"
+  | "excluded_other"
+  | "unknown";
+
+export interface P5AssetView {
+  asset_id: string;
+  document_id: string;
+  document_type: string | null;
+  image_id: string;
+  page_number: number | null;
+  width_px: number | null;
+  height_px: number | null;
+  triage_status: string;
+  triage_reason: string;
+  predicted_class: string | null;
+  classification_confidence: number | null;
+  decision_path: string | null;
+  gallery_group: P5GalleryGroup | string;
+  duplicate_cluster_id: string | null;
+  duplicate_of_asset_id: string | null;
+  procedural_supporting_evidence: boolean;
+  eligible_for_analysis: boolean;
+  caption: string | null;
+  thumbnail_available: boolean;
+}
+
+export interface P5ClusterView {
+  cluster_id: string;
+  kind: string;
+  representative_asset_id: string;
+  member_count: number;
+  document_ids: string[];
+  page_numbers: number[];
+  exclusion_reason: string;
+  repeated_ocr_text: string | null;
+  linking_evidence: string[];
+}
+
+export interface P5AssetsResponse {
+  project_id: string;
+  assets: P5AssetView[];
+  clusters: P5ClusterView[];
+}
+
+export interface P5AssetDetailResponse {
+  project_id: string;
+  asset: Record<string, unknown>;
+  context: Record<string, unknown> | null;
+  classification: Record<string, unknown> | null;
+  cluster: Record<string, unknown> | null;
+  findings: Array<Record<string, unknown>>;
+  thumbnail_available: boolean;
+}
+
+/** Live P5 payload: the pillar result plus full job-local P5 artifacts. */
+export interface LiveP5Result extends LivePillarResult {
+  meta_integration_status?: string;
+  summary?: P5Summary & { review_priority?: number };
+  assets?: Array<Record<string, unknown>>;
+  asset_contexts?: Array<Record<string, unknown>>;
+  classifications?: Array<Record<string, unknown>>;
+  duplicate_clusters?: Array<Record<string, unknown>>;
+  findings?: Array<Record<string, unknown>>;
+  suppressions?: Array<Record<string, unknown>>;
+  document_scores?: Array<Record<string, unknown>>;
+  project_scores?: Array<Record<string, unknown>>;
 }

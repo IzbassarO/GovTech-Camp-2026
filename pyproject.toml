@@ -39,9 +39,40 @@ api = [
     "python-multipart>=0.0.20",
     "uvicorn[standard]>=0.29",
 ]
+# P5 multimodal visual evidence: pinned open-source vision-language encoder
+# (OpenCLIP xlm-roberta-base-ViT-B-32 / laion5b_s13b_b90k, MIT-licensed code
+# and weights, CPU inference) plus EasyOCR for visual-text extraction. Kept in
+# its own group so the lean API image can opt in explicitly; the Docker image
+# installs api+p5 with the CPU-only torch wheel pinned below.
+p5 = [
+    "open-clip-torch>=3.3,<4",
+    "easyocr>=1.7",
+    "pillow>=10",
+    # open_clip's xlm-roberta text tower is an HFTextEncoder: transformers is
+    # a hard runtime requirement of the pinned model but only an optional
+    # extra of open-clip-torch, so it must be declared here explicitly (the
+    # Docker image installs only api+p5, without the docling group that used
+    # to pull it in transitively).
+    "transformers>=4.49,<6",
+    # Explicit so the pytorch-cpu index pin below applies (uv sources only
+    # bind to declared dependencies, not transitive ones).
+    "torch>=2.5",
+    "torchvision>=0.20",
+]
 
 [tool.uv]
-default-groups = ["dev", "api"]
+default-groups = ["dev", "api", "p5"]
+
+# Docker (linux) must never pull CUDA torch wheels: the vision backend is
+# CPU-only by design. macOS keeps the default PyPI wheels (already CPU/MPS).
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [build-system]
 requires = ["hatchling"]
@@ -103,5 +134,9 @@ module = [
     "easyocr",
     "PIL",
     "PIL.*",
+    "open_clip",
+    "open_clip.*",
+    "torch",
+    "torch.*",
 ]
 ignore_missing_imports = true

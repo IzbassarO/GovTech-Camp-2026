@@ -31,10 +31,23 @@ services:
       DALEL_LIVE_JOB_TTL_SECONDS: "1800"
       DALEL_LIVE_MAX_ACTIVE_JOBS: "4"
       DALEL_LIVE_WORKERS: "2"
+      # P5 vision-language model (OpenCLIP multilingual, CPU) and EasyOCR.
+      # First live P5 run downloads weights (~1.1 GB + ~100 MB) into the
+      # named cache volumes below; afterwards start-up is offline. Without
+      # network and without cached weights P5 reports an honest
+      # model-unavailable state and never blocks P1–P4 or Meta.
+      # Uncomment for a deliberately lean deployment without the model:
+      # DALEL_P5_DISABLE_MODEL: "1"
+      # DALEL_P5_DISABLE_OCR: "1"
+      HF_HOME: /home/app/.cache/huggingface
     volumes:
       - ./data/curated:/app/data/curated:ro
       - ./data/results:/app/data/results:ro
       - ./data/annotations:/app/data/annotations:ro
+      # Persistent model caches: survive container rebuilds so the P5 weights
+      # download exactly once per machine.
+      - dalel-hf-cache:/home/app/.cache/huggingface
+      - dalel-easyocr-cache:/home/app/.EasyOCR
     tmpfs:
       - /tmp/dalel-live-jobs:rw,noexec,nosuid,nodev,size=1073741824,mode=0700,uid=10001,gid=10001
     security_opt:
@@ -42,6 +55,9 @@ services:
     cap_drop:
       - ALL
     pids_limit: 256
+    # The CPU vision model loads lazily (~1.5 GB RSS when active); the limit
+    # bounds the container without starving P1–P4-only workloads.
+    mem_limit: 6g
     ports:
       - "8000:8000"
     healthcheck:
@@ -102,3 +118,8 @@ services:
     cap_drop:
       - ALL
     pids_limit: 128
+
+volumes:
+  # OpenCLIP (Hugging Face) and EasyOCR weight caches for P5.
+  dalel-hf-cache:
+  dalel-easyocr-cache:

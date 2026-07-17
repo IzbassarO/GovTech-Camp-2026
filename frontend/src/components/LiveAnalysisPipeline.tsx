@@ -30,6 +30,7 @@ const JOB_STATUS_LABEL: Record<LiveJobStatus, string> = {
   running_p2: "P2 · нормативные проверки",
   running_p3: "P3 · количественные сопоставления",
   running_p4: "P4 · междокументная связность",
+  running_p5: "P5 · анализ визуальных доказательств",
   running_meta: "Meta · рассчитываем приоритет",
   completed: "Анализ завершён",
   failed: "Анализ завершился с ошибкой",
@@ -73,6 +74,7 @@ const STAGES: Array<{
     | "running_p2"
     | "running_p3"
     | "running_p4"
+    | "running_p5"
     | "running_meta"
   >;
   id: string;
@@ -85,6 +87,7 @@ const STAGES: Array<{
   { state: "running_p2", id: "p2", pillar: "P2", title: "Нормативные проверки" },
   { state: "running_p3", id: "p3", pillar: "P3", title: "Количественные сопоставления" },
   { state: "running_p4", id: "p4", pillar: "P4", title: "Междокументная связность" },
+  { state: "running_p5", id: "p5", pillar: "P5", title: "Визуальные доказательства" },
   { state: "running_meta", id: "meta", pillar: "META", title: "Приоритет экспертной проверки" },
 ];
 

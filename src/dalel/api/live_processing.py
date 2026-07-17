@@ -1075,6 +1075,315 @@ def _run_meta(
         )
 
 
+_P5_PHASE_TITLES = {
+    "inventory": "Инвентаризация визуальных активов",
+    "duplicate_clustering": "Кластеризация дубликатов",
+    "classification": "Модельная классификация изображений",
+    "ocr_context": "OCR и привязка контекста",
+    "cross_modal_checks": "Кросс-модальные проверки",
+    "findings": "Формирование находок и оценок",
+    "completed": "P5 завершён",
+}
+
+_P5_TITLE = "Мультимодальный анализ визуальных доказательств"
+
+P5_META_NOTICE = (
+    "P5 отображается отдельно и будет включён в интегральную оценку после реализации P6 и Meta v2."
+)
+
+
+def _p5_direct_assets(
+    workspace: Path, project_id: str, inventory: list[dict[str, Any]], plans: list[DocumentPlan]
+) -> list[Any]:
+    """Live-only P5 inputs: uploaded rasters and label-source document images."""
+    from dalel.pillars.multimodal_visual_evidence.assets import DirectAssetSpec
+
+    specs: list[Any] = []
+    for item in sorted(inventory, key=lambda row: str(row.get("file_id", ""))):
+        media = str(item.get("media_type") or "").lower()
+        if media not in {"jpg", "jpeg", "png"}:
+            continue
+        internal = str(item.get("internal_path") or "")
+        try:
+            path = _path_in(workspace, internal, workspace)
+        except LiveProcessingError:
+            continue
+        if not path.is_file():
+            continue
+        file_id = str(item.get("file_id") or "")
+        from_archive = item.get("source_origin") == "extracted_archive"
+        specs.append(
+            DirectAssetSpec(
+                key=file_id,
+                path=path,
+                project_id=project_id,
+                document_id=file_id,
+                image_id=file_id,
+                extraction_origin=("extracted_archive_image" if from_archive else "uploaded_image"),
+                extraction_method=(
+                    "archive_stream_extraction" if from_archive else "direct_upload"
+                ),
+                provenance_reference=(
+                    f"archive:{item.get('extracted_from')}:{file_id}"
+                    if from_archive
+                    else f"upload:{file_id}"
+                ),
+                source_reference=f"intake:{file_id}",
+                workspace_relative_path=internal,
+                dossier_section=str(item.get("section_id") or "") or None,
+                display_hint=str(item.get("display_filename") or ""),
+            )
+        )
+    # Label-source document images (e.g. hearing-protocol scans) are P5 inputs
+    # for visual triage without ever letting their text cross the model-input
+    # boundary of P1–P4.
+    label_root = workspace / "data" / "processed" / "label_sources" / project_id
+    for plan in sorted(plans, key=lambda p: p.document_id):
+        if plan.role == "model_input":
+            continue
+        images_path = label_root / plan.document_id / "images.jsonl"
+        if not images_path.is_file():
+            continue
+        for index, line in enumerate(images_path.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            relative = row.get("image_path")
+            if not relative:
+                continue
+            try:
+                path = _path_in(label_root / plan.document_id, str(relative), workspace)
+            except LiveProcessingError:
+                continue
+            if not path.is_file():
+                continue
+            image_id = str(row.get("image_id") or f"img_{index:04d}")
+            raw_provenance = row.get("provenance")
+            provenance: dict[str, Any] = raw_provenance if isinstance(raw_provenance, dict) else {}
+            page_number = row.get("page_number")
+            specs.append(
+                DirectAssetSpec(
+                    key=f"{plan.document_id}:{image_id}",
+                    path=path,
+                    project_id=project_id,
+                    document_id=plan.document_id,
+                    image_id=image_id,
+                    extraction_origin="label_source_document_image",
+                    extraction_method=str(
+                        provenance.get("extraction_method") or "p0.5_image_extraction"
+                    ),
+                    provenance_reference=f"label_source:{plan.document_id}",
+                    source_reference=(
+                        f"processed:label_sources:{plan.document_id}:images.jsonl:{index}"
+                    ),
+                    workspace_relative_path=str(path.relative_to(workspace)),
+                    document_type=plan.document_type,
+                    page_number=page_number if isinstance(page_number, int) else None,
+                    dossier_section=plan.section_id,
+                    display_hint=plan.display_name,
+                )
+            )
+    return specs
+
+
+def _run_p5(
+    workspace: Path,
+    curated: Path | None,
+    project_id: str,
+    plans: list[DocumentPlan],
+    inventory: list[dict[str, Any]],
+    progress: Progress | None,
+    cancelled: Callable[[], bool] | None,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    """Run live P5 after P4. Failure never blocks P1–P4 or Meta v1.
+
+    Returns ``(pillar_payload, stage, visual_analysis_status)``.
+    """
+    _cancel(cancelled)
+    _progress(progress, "running_p5", 85, _P5_TITLE)
+    limitations = [P5_META_NOTICE]
+    try:
+        direct = _p5_direct_assets(workspace, project_id, inventory, plans)
+        if curated is None and not direct:
+            reason = "Ни подготовленного набора документов, ни загруженных изображений нет."
+            payload: dict[str, Any] = {
+                "pillar_id": "P5",
+                "status": "unavailable",
+                "reason": reason,
+                "coverage": None,
+                "assessment_confidence": None,
+                "metrics": {},
+                "warnings": [],
+                "limitations": limitations,
+                "meta_integration_status": "pending_p6_meta_v2",
+            }
+            stage = _stage(
+                "p5",
+                _P5_TITLE,
+                "unavailable",
+                pillar_id="P5",
+                reason=reason,
+                limitations=limitations,
+            )
+            return payload, stage, "not_available"
+
+        from dalel.pillars.multimodal_visual_evidence.pipeline import (
+            P5Options,
+        )
+        from dalel.pillars.multimodal_visual_evidence.pipeline import (
+            run_p5 as run_p5_pipeline,
+        )
+        from dalel.pillars.multimodal_visual_evidence.validation import validate_p5_outputs
+
+        results_root = workspace / "data" / "results"
+        dataset_dir = curated if curated is not None else workspace / "data" / "curated" / "v1"
+
+        def phase_progress(phase: str) -> None:
+            title = _P5_PHASE_TITLES.get(phase, phase)
+            _progress(progress, "running_p5", 85, f"P5: {title}")
+
+        result = run_p5_pipeline(
+            P5Options(
+                dataset_dir=dataset_dir,
+                output_dir=results_root / "p5",
+                annotations_root=workspace / "data" / "annotations",
+                project_id=project_id,
+                p3_dir=(results_root / "p3") if (results_root / "p3").is_dir() else None,
+                p4_dir=(results_root / "p4") if (results_root / "p4").is_dir() else None,
+                direct_assets=direct,
+                dossier_sections={plan.document_id: plan.section_id for plan in plans},
+                document_hints={plan.document_id: plan.display_name for plan in plans},
+                allow_missing_dataset=True,
+                progress=phase_progress,
+            )
+        )
+        validation = validate_p5_outputs(dataset_dir, results_root / "p5")
+        if not validation.ok:
+            raise LiveProcessingError("p5_validation_failed")
+
+        model_available = result.metrics.get("model_status") == "available"
+        project_score = next((s for s in result.project_scores if s.project_id == project_id), None)
+        warnings = []
+        if not model_available:
+            warnings.append(
+                "Визуальные материалы зарегистрированы, но мультимодальная модель недоступна."
+            )
+        summary = {
+            "total_asset_count": project_score.total_asset_count if project_score else 0,
+            "analyzed_representative_count": (
+                project_score.analyzed_representative_count if project_score else 0
+            ),
+            "excluded_duplicate_count": (
+                project_score.excluded_duplicate_count if project_score else 0
+            ),
+            "excluded_header_or_logo_count": (
+                project_score.excluded_header_or_logo_count if project_score else 0
+            ),
+            "procedural_asset_count": (
+                project_score.procedural_asset_count if project_score else 0
+            ),
+            "duplicate_cluster_count": (
+                project_score.duplicate_cluster_count if project_score else 0
+            ),
+            "review_priority": (
+                project_score.visual_evidence_review_priority_score if project_score else 0
+            ),
+            "visual_coverage": project_score.visual_coverage if project_score else None,
+            "assessment_confidence": (
+                project_score.assessment_confidence if project_score else None
+            ),
+            "model_status": "available" if model_available else "unavailable",
+        }
+        payload = {
+            "pillar_id": "P5",
+            "status": "completed",
+            "reason": None,
+            "coverage": project_score.visual_coverage if project_score else None,
+            "assessment_confidence": (
+                project_score.assessment_confidence if project_score else None
+            ),
+            "metrics": _primitive_metrics(result.metrics),
+            "warnings": warnings,
+            "limitations": limitations,
+            "meta_integration_status": "pending_p6_meta_v2",
+            "summary": summary,
+            "assets": _model_rows(result.assets),
+            "asset_contexts": _model_rows(result.contexts),
+            "classifications": _model_rows(result.classifications),
+            "duplicate_clusters": _model_rows(result.clusters),
+            "findings": _model_rows(result.findings),
+            "suppressions": _model_rows(result.suppressions),
+            "document_scores": _model_rows(result.document_scores),
+            "project_scores": _model_rows(result.project_scores),
+        }
+        stage = _stage(
+            "p5",
+            _P5_TITLE,
+            "completed",
+            pillar_id="P5",
+            operation=_P5_TITLE,
+            metrics=[
+                {
+                    "label": "visual assets",
+                    "value": str(summary["total_asset_count"]),
+                    "hint": None,
+                    "technical_id": "assets_total",
+                },
+                {
+                    "label": "analyzed representatives",
+                    "value": str(summary["analyzed_representative_count"]),
+                    "hint": None,
+                    "technical_id": "analyzed_representatives",
+                },
+                {
+                    "label": "duplicates excluded",
+                    "value": str(summary["excluded_duplicate_count"]),
+                    "hint": None,
+                    "technical_id": "duplicates_excluded",
+                },
+                {
+                    "label": "findings",
+                    "value": str(len(result.findings)),
+                    "hint": None,
+                    "technical_id": "findings",
+                },
+            ],
+            warnings=warnings,
+            limitations=limitations,
+        )
+        return payload, stage, ("completed" if model_available else "model_unavailable")
+    except LiveProcessingCancelled:
+        raise
+    except Exception:
+        reason = "P5 не смог сформировать корректный артефакт в рамках задания."
+        payload = {
+            "pillar_id": "P5",
+            "status": "failed",
+            "reason": reason,
+            "coverage": None,
+            "assessment_confidence": None,
+            "metrics": {},
+            "warnings": [],
+            "limitations": limitations,
+            "meta_integration_status": "pending_p6_meta_v2",
+        }
+        stage = _stage(
+            "p5",
+            _P5_TITLE,
+            "failed",
+            pillar_id="P5",
+            operation=_P5_TITLE,
+            reason=reason,
+            limitations=limitations,
+        )
+        return payload, stage, "failed"
+
+
 def _inventory_payload(inventory: list[dict[str, Any]], request: dict[str, Any]) -> dict[str, Any]:
     supplied = {str(item["section_id"]) for item in inventory if item.get("duplicate_of") is None}
     if request.get("public_feedback") is not None:
@@ -1290,6 +1599,17 @@ def process_live_job(
         progress,
         cancelled,
     )
+    p5_payload, p5_stage, visual_status = _run_p5(
+        workspace,
+        curated,
+        str(request["project_id"]),
+        plans,
+        inventory,
+        progress,
+        cancelled,
+    )
+    pillars["P5"] = p5_payload
+    # Meta v1 deliberately remains based on P1–P4 only; P5 is reported apart.
     meta, meta_summary, meta_stage = _run_meta(
         workspace,
         str(request["project_id"]),
@@ -1307,11 +1627,20 @@ def process_live_job(
                 )
     _cancel(cancelled)
     warnings = ["P2 uses the packaged synthetic/demo-only regulatory corpus."]
+    if visual_status == "completed":
+        p5_limitation = P5_META_NOTICE
+    elif visual_status == "model_unavailable":
+        p5_limitation = (
+            "Визуальные материалы зарегистрированы, но мультимодальная модель недоступна."
+        )
+    else:
+        p5_limitation = "P5 visual semantics are not available for this job."
     limitations = list(
         dict.fromkeys(
             [
                 *archive_limitations,
-                "P5 visual semantics and P6 geospatial analysis are not available.",
+                p5_limitation,
+                "P6 geospatial analysis is not available.",
                 (
                     "Structured public-feedback metadata is inventoried but does not "
                     "enter accepted P1–P4 formulas."
@@ -1335,7 +1664,7 @@ def process_live_job(
         "project_name": str(request.get("project_display_name") or "Новый проект"),
         "inventory": package,
         "preparation": preparation,
-        "stages": [p0_stage, p05_stage, *pillar_stages, meta_stage],
+        "stages": [p0_stage, p05_stage, *pillar_stages, p5_stage, meta_stage],
         "pillars": pillars,
         "meta": meta,
         "meta_summary": meta_summary,
@@ -1343,7 +1672,7 @@ def process_live_job(
         "archive_updates": archive_updates,
         "warnings": warnings,
         "limitations": limitations,
-        "visual_analysis_status": "not_available",
+        "visual_analysis_status": visual_status,
         "geospatial_analysis_status": "not_available",
         "generated_explanation": None,
         "generation_status": "not_available",

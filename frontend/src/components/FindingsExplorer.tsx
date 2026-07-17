@@ -180,12 +180,12 @@ function FilterSelect({
   options: Array<{ value: string; label: string }>;
 }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-slate-500">
+    <label className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
       <span className="hidden sm:inline">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 focus:border-accent-500"
+        className="max-w-full rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-sm text-slate-800 focus:border-accent-500"
         aria-label={label}
       >
         {options.map((o) => (

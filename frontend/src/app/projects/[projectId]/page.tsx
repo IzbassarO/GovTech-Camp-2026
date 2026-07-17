@@ -25,6 +25,7 @@ import { FindingsExplorer } from "@/components/FindingsExplorer";
 import { ReportModal } from "@/components/ReportModal";
 import { DocumentsTable } from "@/components/DocumentsTable";
 import { CoherenceView } from "@/components/CoherenceView";
+import { VisualEvidenceView } from "@/components/VisualEvidenceView";
 import { MetaAssessmentView } from "@/components/MetaAssessmentView";
 
 export default function ProjectDetailPage() {
@@ -185,6 +186,17 @@ export default function ProjectDetailPage() {
         </div>
       ) : null}
 
+      {s ? (
+        <div id="p5" className="scroll-mt-28">
+          <Section
+            title="P5 · Визуальные доказательства"
+            description="Мультимодальный анализ визуальных материалов: инвентаризация, подавление дубликатов, модельная классификация, OCR и связь с текстом. P5 не входит в интегральную оценку Meta v1."
+          >
+            <VisualEvidenceView projectId={projectId} />
+          </Section>
+        </div>
+      ) : null}
+
       <div ref={findingsRef} id="findings" className="scroll-mt-28">
         <Section
           title="Замечания"
@@ -317,6 +329,7 @@ function LocalNav({ hasP4 }: { hasP4: boolean }) {
     { href: "#meta", label: "Приоритет" },
     { href: "#pillars", label: "Пиллары" },
     ...(hasP4 ? [{ href: "#p4", label: "P4 · Связи" }] : []),
+    { href: "#p5", label: "P5 · Визуальные" },
     { href: "#findings", label: "Замечания" },
     { href: "#documents", label: "Документы" },
     { href: "#reports", label: "Отчёты" },

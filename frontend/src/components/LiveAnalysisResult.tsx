@@ -4,8 +4,10 @@ import { CheckCircle2, Home, Image as ImageIcon, RotateCcw, ShieldAlert } from "
 import type {
   LiveDossierSectionId,
   LiveJobResponse,
+  LiveP5Result,
   LivePillarResult,
 } from "@/lib/types";
+import { LiveVisualEvidence } from "@/components/LiveVisualEvidence";
 import {
   assessmentPercent,
   formatMetaNumber,
@@ -40,7 +42,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function LiveAnalysisResult({ job }: { job: LiveJobResponse }) {
   if (job.status !== "completed") return null;
-  const pillarResults = Object.entries(job.result?.pillars ?? {});
+  const allPillars = job.result?.pillars ?? {};
+  const p5 = (allPillars as Record<string, LivePillarResult>).P5 as LiveP5Result | undefined;
+  const pillarResults = Object.entries(allPillars).filter(([key]) => key !== "P5");
   const inventory = job.result?.inventory;
   const preparation = job.result?.preparation;
   const meta = job.result?.meta ?? null;
@@ -215,11 +219,26 @@ export function LiveAnalysisResult({ job }: { job: LiveJobResponse }) {
         </div>
       </div>
 
+      <div>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          P5 · Визуальные доказательства
+        </h3>
+        <div className="mt-2">
+          {p5 ? (
+            <LiveVisualEvidence jobId={job.job_id} p5={p5} />
+          ) : (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+              P5 не выполнялся для этого задания; отсутствие анализа не означает низкий риск.
+            </p>
+          )}
+        </div>
+      </div>
+
       <div className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
         <ImageIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400" aria-hidden />
         <p className="text-xs leading-relaxed text-slate-500">
-          Визуальные материалы инвентаризированы, но P5 и P6 пока недоступны и не влияют на Meta.
-          Автоматически сгенерированное объяснение также не создаётся.
+          P5 отображается отдельно и будет включён в интегральную оценку после реализации P6 и
+          Meta v2. P6 (геоконтекст) и автоматически сгенерированное объяснение пока недоступны.
         </p>
       </div>
 
