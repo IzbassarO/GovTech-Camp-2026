@@ -30,6 +30,13 @@ dev = [
 # default for developer convenience via [tool.uv] default-groups below.
 api = [
     "fastapi>=0.110",
+    # Job-local curation re-validates every record against the dataset schema
+    # contract before a live dataset is accepted (curation/schema_contract.py).
+    "jsonschema>=4.21",
+    "pillow>=10",
+    "pymupdf>=1.24",
+    "python-docx>=1.1",
+    "python-multipart>=0.0.20",
     "uvicorn[standard]>=0.29",
 ]
 

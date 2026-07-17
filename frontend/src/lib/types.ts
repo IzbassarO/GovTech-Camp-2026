@@ -392,3 +392,437 @@ export interface ReportResponse {
   is_demo: boolean;
   generated_note: string;
 }
+
+// --- structured dossier demo: sections -> animated analysis -> result --------
+// Mirrors src/dalel/api/dossier.py + src/dalel/api/demo.py. The dossier layer
+// reconciles the FULL official source package (including files that exist
+// only on the official portal) against the curated dataset and P1–P4/Meta
+// artifacts, so every file carries an honest, COMPUTED processing state.
+// Every stage metric is read from the accepted artifacts; this is a
+// "Prepared Demo Replay", never a claim that arbitrary uploaded files
+// produced these results.
+
+export type PreparedDossierSectionId =
+  | "project_documents"
+  | "media_publication"
+  | "notice_boards"
+  | "hearing_protocol"
+  | "public_feedback";
+
+export type LiveDossierSectionId =
+  | "project_documents"
+  | "official_supporting_documents"
+  | "hearing_protocol"
+  | "procedural_publication_evidence"
+  | "visual_geographic_materials"
+  | "public_feedback_metadata";
+
+export type DossierSectionId = PreparedDossierSectionId | LiveDossierSectionId;
+
+export type RequirementLevel =
+  | "required"
+  | "conditionally_required"
+  | "recommended"
+  | "optional"
+  | "external_source";
+
+export type SourceOrigin = "official_portal" | "local_raw" | "extracted_archive" | "user_upload";
+
+export type ArchiveStatus =
+  | "not_archive"
+  | "registered"
+  | "extracted"
+  | "extraction_unsupported"
+  | "extraction_failed";
+
+export type ReconciledStatus =
+  | "analyzed"
+  | "curated"
+  | "supporting_only"
+  | "extracted"
+  | "available_raw"
+  | "official_only"
+  | "unavailable"
+  | "unsupported_archive"
+  | "excluded_with_reason";
+
+export interface DossierSectionDefinition {
+  section_id: DossierSectionId;
+  order: number;
+  title_ru: string;
+  purpose: string;
+  requirement_level: RequirementLevel;
+  requirement_label: string;
+  accepted_formats: string[];
+  multiplicity_label: string;
+  min_expected_files: number;
+  upload_enabled: boolean;
+  pillar_relevance: string[];
+  future_pillar: string | null;
+}
+
+export interface DossierSchemaResponse {
+  schema_version: string;
+  sections: DossierSectionDefinition[];
+}
+
+export interface DossierDocument {
+  document_id: string;
+  curated_document_id: string | null;
+  section_id: DossierSectionId;
+  official_category: string | null;
+  safe_display_name: string;
+  original_name: string | null;
+  subtype: string | null;
+  subtype_label: string | null;
+  media_type: string;
+  size_label: string | null;
+  source_origin: SourceOrigin;
+  official_source_registered: boolean;
+  local_available: boolean;
+  archive_status: ArchiveStatus;
+  extracted_from: string | null;
+  text_extracted: boolean;
+  page_count: number | null;
+  curated: boolean;
+  analyzed_by: string[];
+  meta_evidence: boolean;
+  registered_label_source: boolean;
+  supporting_evidence_only: boolean;
+  reconciled_status: ReconciledStatus;
+  status_label: string;
+  missing_reason: string | null;
+  provenance_reference: string | null;
+  limitations: string[];
+  eligible_for_p5: boolean;
+  visual_media_type: string | null;
+  visual_analysis_status: "not_available";
+}
+
+export interface DossierSectionStatus {
+  total: number;
+  official_registered: number;
+  local_available: number;
+  analyzed: number;
+  supporting: number;
+  official_only: number;
+  user_supplied: number;
+  coverage_state:
+    | "included_in_analysis"
+    | "local_materials"
+    | "official_only"
+    | "external_registered"
+    | "empty";
+  status_note: string;
+}
+
+export interface DossierSectionView {
+  definition: DossierSectionDefinition;
+  status: DossierSectionStatus;
+  documents: DossierDocument[];
+}
+
+export interface PackageCompleteness {
+  heading: string;
+  official_registered_total: number;
+  locally_available_total: number;
+  extracted_total: number;
+  analyzed_total: number;
+  supporting_total: number;
+  official_only_total: number;
+  user_supplied_total: number;
+  sections_total: number;
+  sections_with_materials: number;
+}
+
+export interface AnalysisCoverageRecord {
+  document_id: string;
+  safe_display_name: string;
+  section_id: DossierSectionId;
+  section_title: string;
+  prepared: boolean;
+  p1: boolean;
+  p2: boolean;
+  p3: boolean;
+  p4: boolean;
+  meta_evidence: boolean;
+  limitation: string | null;
+}
+
+export interface PublicFeedbackSummary {
+  registered_in_official_source: boolean;
+  official_heading: string | null;
+  submission_count: number;
+  question_count: number;
+  responses_status_label: string;
+  submitted_at_label: string | null;
+  provenance_reference: string | null;
+  included_in_analysis: boolean;
+  feeds_pillars: string[];
+  note: string;
+}
+
+export interface DossierProjectIdentity {
+  project_id: string;
+  display_name: string;
+  official_title: string | null;
+  hearing_registration_number: string | null;
+  project_type_label: string | null;
+  region_label: string | null;
+  initiator_type_label: string | null;
+  hearing_method_label: string | null;
+  hearing_period_label: string | null;
+  portal_name: string | null;
+  source_url: string | null;
+  official_source_verified_at: string | null;
+  location_reference_status: string;
+  geospatial_analysis_status: string;
+  eligible_for_p6: boolean;
+}
+
+export interface DossierManifestResponse {
+  demo_project_id: string;
+  project_name: string;
+  manifest_version: string;
+  prepared: boolean;
+  identity: DossierProjectIdentity;
+  sections: DossierSectionView[];
+  public_feedback: PublicFeedbackSummary | null;
+  completeness: PackageCompleteness;
+  coverage_matrix: AnalysisCoverageRecord[];
+  limitations: string[];
+}
+
+export interface DemoJobRequest {
+  mode: "prepared_replay";
+}
+
+export interface DemoStageMetric {
+  label: string;
+  value: string;
+  hint: string | null;
+  technical_id: string | null;
+}
+
+export interface DemoStage {
+  stage_id: string;
+  pillar_id: string | null;
+  title: string;
+  status_messages: string[];
+  headline: string;
+  inputs: string[];
+  input_note: string | null;
+  operation: string | null;
+  metrics: DemoStageMetric[];
+  warning: string | null;
+  empty_state: string | null;
+  limitations: string | null;
+}
+
+export interface DemoJobResponse {
+  job_id: string;
+  project_id: string;
+  project_name: string;
+  status: "completed";
+  mode: "prepared_replay";
+  disclaimer: string;
+  analysis_scope_note: string;
+  dossier: DossierManifestResponse;
+  registered_source_count: number;
+  locally_available_count: number;
+  analyzed_count: number;
+  uploaded_file_count: number;
+  uploaded_total_size_label: string;
+  stages: DemoStage[];
+  generated_explanation: string | null;
+  generation_status: "not_available";
+  limitations: string[];
+  result_url: string;
+}
+
+/** Returned only once, when a protected prepared-replay job is created. */
+export interface DemoJobCreateResponse extends DemoJobResponse {
+  access_token: string;
+}
+
+// --- live analysis ------------------------------------------------------------
+
+export type LiveJobStatus =
+  | "created"
+  | "receiving"
+  | "validating"
+  | "preparing"
+  | "running_p1"
+  | "running_p2"
+  | "running_p3"
+  | "running_p4"
+  | "running_meta"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "expired";
+
+export type LiveStageStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "unavailable"
+  | "insufficient_input"
+  | "failed"
+  | "cancelled";
+
+export interface LivePackageLimits {
+  max_file_count: number;
+  max_file_bytes: number;
+  max_total_bytes: number;
+  max_archive_files: number;
+  max_archive_expanded_bytes: number;
+  max_archive_ratio: number;
+  job_ttl_seconds: number;
+  max_active_jobs: number;
+}
+
+export interface LiveDossierSectionDefinition {
+  section_id: LiveDossierSectionId;
+  order: number;
+  title_ru: string;
+  accepted_formats: string[];
+  upload_enabled: boolean;
+}
+
+export interface LiveDossierSchemaResponse {
+  mode: "live_analysis";
+  sections: LiveDossierSectionDefinition[];
+  limits: LivePackageLimits;
+  visual_analysis_status: "not_available";
+  geospatial_analysis_status: "not_available";
+  generated_explanation: null;
+  generation_status: "not_available";
+}
+
+export interface LiveSectionAssignment {
+  section_id: LiveDossierSectionId;
+  upload_indices: number[];
+}
+
+export interface LivePublicFeedbackInput {
+  submission_count: number;
+  question_count: number;
+  note?: string | null;
+}
+
+export interface LiveJobRequestPayload {
+  mode: "live_analysis";
+  project_display_name?: string | null;
+  sections: LiveSectionAssignment[];
+  public_feedback?: LivePublicFeedbackInput;
+}
+
+export interface LiveJobEvent {
+  sequence: number;
+  state: LiveJobStatus;
+  progress: number;
+  operation: string;
+  metrics: Record<string, unknown> | null;
+  warnings: string[];
+  limitations: string[];
+}
+
+export interface LiveJobEventsResponse {
+  job_id: string;
+  status: LiveJobStatus;
+  events: LiveJobEvent[];
+}
+
+export interface LiveStageProgress {
+  stage_id: string;
+  pillar_id: string | null;
+  title: string;
+  status: LiveStageStatus;
+  operation: string | null;
+  progress: number;
+  metrics: DemoStageMetric[];
+  warnings: string[];
+  limitations: string[];
+  reason: string | null;
+}
+
+export interface LiveFileResponse {
+  file_id: string;
+  section_id: LiveDossierSectionId;
+  display_filename: string;
+  media_type: "pdf" | "docx" | "zip" | "rar" | "jpg" | "png";
+  size_bytes: number;
+  sha256: string;
+  duplicate_of: string | null;
+  archive_status: ArchiveStatus;
+}
+
+export interface LivePreparationSummary {
+  document_count: number;
+  prepared_document_count: number;
+  page_count: number;
+  extracted_visual_asset_count: number;
+  extraction_failure_count: number;
+}
+
+export interface LivePillarResult {
+  pillar_id?: string;
+  status: "completed" | "unavailable" | "insufficient_input" | "failed";
+  reason?: string | null;
+  coverage?: number | null;
+  assessment_confidence?: number | null;
+  metrics?: Record<string, string | number | boolean | null>;
+  warnings?: string[];
+  limitations?: string[];
+}
+
+export interface LiveResultInventory {
+  expected_sections: LiveDossierSectionId[];
+  supplied_sections: LiveDossierSectionId[];
+  missing_sections: LiveDossierSectionId[];
+  unsupported_materials: string[];
+  duplicate_files: string[];
+  package_readiness: string;
+  files: unknown[];
+  public_feedback: Record<string, unknown> | null;
+}
+
+export interface LiveAnalysisResultPayload {
+  [key: string]: unknown;
+  schema_version?: string;
+  mode?: "live_analysis";
+  project_id?: string;
+  project_name?: string;
+  inventory?: LiveResultInventory;
+  preparation?: LivePreparationSummary;
+  stages?: LiveStageProgress[];
+  pillars?: Partial<Record<"P1" | "P2" | "P3" | "P4", LivePillarResult>>;
+  meta?: ProjectMetaAssessment | null;
+  warnings?: string[];
+  limitations?: string[];
+}
+
+export interface LiveJobResponse {
+  job_id: string;
+  project_id: string;
+  project_display_name: string;
+  mode: "live_analysis";
+  status: LiveJobStatus;
+  progress: number;
+  current_operation: string;
+  file_count: number;
+  total_size_bytes: number;
+  files: LiveFileResponse[];
+  result: LiveAnalysisResultPayload | null;
+  failure_code: string | null;
+  limitations: string[];
+  visual_analysis_status: "not_available";
+  geospatial_analysis_status: "not_available";
+  generated_explanation: null;
+  generation_status: "not_available";
+}
+
+export interface LiveJobCreateResponse extends LiveJobResponse {
+  access_token: string;
+}

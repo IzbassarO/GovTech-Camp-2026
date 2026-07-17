@@ -1,13 +1,15 @@
-"""FastAPI application factory for the DÁLEL Eco demo website.
+"""FastAPI application factory for prepared replay and isolated live analysis.
 
-Read-only, offline, no database, no LLM calls. Serves normalized pillar
-artifacts to the frontend. Errors return clean JSON (``{error, detail}``) —
-never a Python traceback, never a filesystem path.
+Prepared artifacts remain read-only. New uploads are confined to authenticated,
+TTL-bound temporary workspaces. Errors return clean JSON (``{error, detail}``)
+without a traceback or filesystem path.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -16,11 +18,24 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from dalel.api import API_VERSION
+from dalel.api.body_limit import RequestBodyLimitMiddleware, RequestBodyTooLarge
 from dalel.api.config import get_settings
 from dalel.api.errors import ApiError
-from dalel.api.routes import findings, health, projects, reports, system
+from dalel.api.live import MAX_TOTAL_BYTES, get_live_job_manager
+from dalel.api.routes import demo, findings, health, live, projects, reports, system
 
 logger = logging.getLogger("dalel.api")
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    manager = get_live_job_manager()
+    manager.start()
+    try:
+        yield
+    finally:
+        manager.stop_sweeper()
+        manager.reset()
 
 
 def create_app() -> FastAPI:
@@ -29,18 +44,23 @@ def create_app() -> FastAPI:
         title="DÁLEL Eco — Demo API",
         version=API_VERSION,
         description=(
-            "Read-only API over accepted P1/P2/P3 analysis artifacts."
+            "Immutable prepared replay plus isolated live project analysis."
             " Expert-support tool: no legal or administrative conclusions."
         ),
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=_lifespan,
     )
 
+    # Enforce the aggregate byte ceiling before Starlette's multipart parser
+    # can spool an oversized request. The allowance covers multipart headers
+    # and the small JSON request field.
+    app.add_middleware(RequestBodyLimitMiddleware, max_bytes=MAX_TOTAL_BYTES + 2 * 1024 * 1024)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
         allow_credentials=False,
-        allow_methods=["GET", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 
@@ -66,6 +86,16 @@ def create_app() -> FastAPI:
             content={"error": "invalid_request", "detail": "Некорректные параметры запроса."},
         )
 
+    @app.exception_handler(RequestBodyTooLarge)
+    async def _body_limit_handler(_: Request, __: RequestBodyTooLarge) -> JSONResponse:
+        return JSONResponse(
+            status_code=413,
+            content={
+                "error": "request_body_too_large",
+                "detail": "Размер запроса превышает допустимый лимит.",
+            },
+        )
+
     @app.exception_handler(Exception)
     async def _unhandled_handler(_: Request, exc: Exception) -> JSONResponse:
         # Log server-side with detail; return a generic message (no leak).
@@ -83,6 +113,8 @@ def create_app() -> FastAPI:
     app.include_router(findings.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
     app.include_router(system.router, prefix="/api")
+    app.include_router(demo.router, prefix="/api")
+    app.include_router(live.router, prefix="/api")
     return app
 
 

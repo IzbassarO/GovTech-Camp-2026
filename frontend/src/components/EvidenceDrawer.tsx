@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ExternalLink, X } from "lucide-react";
 
 import type { FindingDetail } from "@/lib/types";
@@ -32,8 +32,15 @@ export function EvidenceDrawer({
     [findingId],
   );
 
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<Element | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    // Remember what had focus so it can be restored on close, and move focus
+    // into the dialog so keyboard users aren't left behind on the page body.
+    triggerRef.current = document.activeElement;
+    closeButtonRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -42,13 +49,21 @@ export function EvidenceDrawer({
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
+      if (triggerRef.current instanceof HTMLElement) {
+        triggerRef.current.focus();
+      }
     };
   }, [open, onClose]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="evidence-drawer-title"
+    >
       <button
         type="button"
         className="absolute inset-0 bg-navy-950/40"
@@ -57,8 +72,11 @@ export function EvidenceDrawer({
       />
       <aside className="relative flex h-full w-full max-w-xl flex-col bg-white shadow-drawer">
         <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-sm font-semibold text-slate-900">Детали замечания</h2>
+          <h2 id="evidence-drawer-title" className="text-sm font-semibold text-slate-900">
+            Детали замечания
+          </h2>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700"

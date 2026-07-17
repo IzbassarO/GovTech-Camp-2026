@@ -18,6 +18,55 @@ risk scoring, knowledge graph, web scraping и обучение моделей.
 - Разделить выходы model inputs и label sources физически разными директориями —
   защита от leakage.
 
+## Демо-сайт в Docker (одна команда)
+
+Полный демо-стек (read-only FastAPI + Next.js frontend) поднимается одной
+командой из корня репозитория. Нужен установленный и запущенный
+[Docker Desktop](https://www.docker.com/products/docker-desktop/):
+
+```bash
+docker compose up --build
+```
+
+- Frontend: http://localhost:3000 (`/analyze` — два раздельных режима:
+  неизменяемая демонстрация Bayterek и фактический анализ нового проекта)
+- API: http://localhost:8000 (health: `/api/health`, docs: `/api/docs`)
+
+Управление стеком:
+
+```bash
+docker compose down        # остановить и удалить контейнеры
+docker compose logs -f     # следить за логами обоих сервисов
+docker compose ps          # статус и health сервисов
+docker compose up --build  # пересборка после изменения кода
+```
+
+Данные: нужны локальные каталоги `data/curated/`, `data/results/` и
+`data/annotations/` с принятыми артефактами. Они монтируются в контейнер
+API **только для чтения** и никогда не копируются в образ (private
+PDF/DOCX из `docs/` и `data/raw/` в образы не попадают —
+см. `.dockerignore`). `data/annotations` нужен Meta replay-валидации: без
+него интегральная оценка (META) недоступна.
+
+Если порт 3000 или 8000 занят, Compose не стартует. Порты фиксированы
+(фронтенд собран под `http://localhost:8000`) — найдите и остановите
+занимающий процесс:
+
+```bash
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+```
+
+Режимы `/analyze` строго разделены. «Демонстрация Bayterek» — неизменяемый
+replay: она ничего не загружает и воспроизводит только принятые артефакты
+подготовленного проекта. «Анализ нового проекта» принимает реальные байты
+файлов в изолированное временное задание (случайный идентификатор + токен
+доступа в заголовке `X-Dalel-Job-Token`), выполняет фактические P0/P0.5 и
+принятые P1–P4/Meta на этом пакете и честно помечает недоступные проверки —
+никогда не подставляя результаты Bayterek. Временные файлы живут только в
+`DALEL_LIVE_JOB_DIR` (tmpfs контейнера) и удаляются по TTL или отмене.
+Подробности: `docs/DEMO_WEBSITE.md`.
+
 ## Setup (uv)
 
 ```bash

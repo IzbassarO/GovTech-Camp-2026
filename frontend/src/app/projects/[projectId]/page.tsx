@@ -53,6 +53,7 @@ export default function ProjectDetailPage() {
   }
 
   const s = summary.data;
+  const hasP4 = Boolean(s?.pillars.find((p) => p.key === "p4")?.available);
 
   return (
     <div className="space-y-10">
@@ -116,65 +117,75 @@ export default function ProjectDetailPage() {
         )}
       </div>
 
-      <Section
-        title="Интегральная приоритетность проверки"
-        description={
-          s && !s.meta
-            ? "Для этого проекта нет валидного Meta-артефакта."
-            : "Прозрачная детерминированная оценка пакета по принятым результатам P1–P4."
-        }
-      >
-        {summary.loading || !s ? (
-          <SkeletonCard />
-        ) : s.meta ? (
-          <MetaAssessmentView meta={s.meta} />
-        ) : (
-          <EmptyState
-            title="Интегральная оценка пока недоступна"
-            hint="Для проекта нет валидного Meta-артефакта. Отсутствие оценки не означает низкий приоритет или безопасность."
-          />
-        )}
-      </Section>
+      {s ? <LocalNav hasP4={hasP4} /> : null}
 
-      <Section
-        title="Пиллары анализа"
-        description="Каждый пиллар оценивает отдельный аспект и сохраняет собственные доказательства и ограничения."
-      >
-        {summary.loading || !s ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div id="meta" className="scroll-mt-28">
+        <Section
+          title="Интегральная приоритетность проверки"
+          description={
+            s && !s.meta
+              ? "Для этого проекта нет валидного Meta-артефакта."
+              : "Прозрачная детерминированная оценка пакета по принятым результатам P1–P4."
+          }
+        >
+          {summary.loading || !s ? (
             <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </div>
-        ) : (
-          <>
+          ) : s.meta ? (
+            <MetaAssessmentView meta={s.meta} />
+          ) : (
+            <EmptyState
+              title="Интегральная оценка пока недоступна"
+              hint="Для проекта нет валидного Meta-артефакта. Отсутствие оценки не означает низкий приоритет или безопасность."
+            />
+          )}
+        </Section>
+      </div>
+
+      <div id="pillars" className="scroll-mt-28">
+        <Section
+          title="Пиллары анализа"
+          description="Каждый пиллар оценивает отдельный аспект и сохраняет собственные доказательства и ограничения."
+        >
+          {summary.loading || !s ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {s.pillars.map((pillar) => (
-                <PillarCard key={pillar.key} pillar={pillar} onOpenFindings={openFindings} />
-              ))}
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {s.reserved_pillars.filter((rp) => rp.key !== "meta").map((rp) => (
-                <div
-                  key={rp.key}
-                  className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="chip bg-slate-200 text-slate-500">{rp.pillar_id}</span>
-                    <p className="text-sm font-medium text-slate-600">{rp.title}</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {s.pillars.map((pillar) => (
+                  <PillarCard key={pillar.key} pillar={pillar} onOpenFindings={openFindings} />
+                ))}
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {s.reserved_pillars.filter((rp) => rp.key !== "meta").map((rp) => (
+                  <div
+                    key={rp.key}
+                    className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="chip bg-slate-200 text-slate-500">{rp.pillar_id}</span>
+                      <p className="text-sm font-medium text-slate-600">{rp.title}</p>
+                    </div>
+                    <p className="mt-1.5 text-xs text-slate-500">{rp.description}</p>
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">{rp.description}</p>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </Section>
+                ))}
+              </div>
+            </>
+          )}
+        </Section>
+      </div>
 
-      {s ? <P4Section pillars={s.pillars} /> : null}
+      {s ? (
+        <div id="p4" className="scroll-mt-28">
+          <P4Section pillars={s.pillars} />
+        </div>
+      ) : null}
 
-      <div ref={findingsRef} className="scroll-mt-20">
+      <div ref={findingsRef} id="findings" className="scroll-mt-28">
         <Section
           title="Замечания"
           description="Нажмите строку, чтобы открыть свидетельства. Все записи требуют экспертной проверки."
@@ -195,58 +206,62 @@ export default function ProjectDetailPage() {
         </Section>
       </div>
 
-      <Section title="Документы пакета">
-        {detail.error ? (
-          <ErrorBlock message={detail.error} />
-        ) : detail.loading || !detail.data ? (
-          <LoadingBlock label="Загрузка документов…" />
-        ) : (
-          <DocumentsTable documents={detail.data.documents} />
-        )}
-      </Section>
+      <div id="documents" className="scroll-mt-28">
+        <Section title="Документы пакета">
+          {detail.error ? (
+            <ErrorBlock message={detail.error} />
+          ) : detail.loading || !detail.data ? (
+            <LoadingBlock label="Загрузка документов…" />
+          ) : (
+            <DocumentsTable documents={detail.data.documents} />
+          )}
+        </Section>
+      </div>
 
       {s ? (
-        <Section title="Отчёты и ограничения">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {s.meta ? (
-              <div className="card flex flex-col border-accent-100 p-5">
-                <p className="text-sm font-semibold text-slate-900">
-                  Meta · Приоритет проверки
-                </p>
-                <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-500">
-                  Итог P1–P4, точные вклады факторов, покрытие, уверенность и
-                  ограничения оценки.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setReportPillar("meta")}
-                  className="btn-ghost mt-4 self-start"
-                >
-                  Открыть отчёт
-                </button>
-              </div>
-            ) : null}
-            {s.pillars.map((pillar) => (
-              <div key={pillar.key} className="card flex flex-col p-5">
-                <p className="text-sm font-semibold text-slate-900">{pillar.title}</p>
-                {pillar.limitations ? (
-                  <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-500">
-                    {pillar.limitations}
+        <div id="reports" className="scroll-mt-28">
+          <Section title="Отчёты и ограничения">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {s.meta ? (
+                <div className="card flex flex-col border-accent-100 p-5">
+                  <p className="text-sm font-semibold text-slate-900">
+                    Meta · Приоритет проверки
                   </p>
-                ) : (
-                  <span className="flex-1" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => setReportPillar(pillar.key)}
-                  className="btn-ghost mt-4 self-start"
-                >
-                  Открыть отчёт
-                </button>
-              </div>
-            ))}
-          </div>
-        </Section>
+                  <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-500">
+                    Итог P1–P4, точные вклады факторов, покрытие, уверенность и
+                    ограничения оценки.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setReportPillar("meta")}
+                    className="btn-ghost mt-4 self-start"
+                  >
+                    Открыть отчёт
+                  </button>
+                </div>
+              ) : null}
+              {s.pillars.map((pillar) => (
+                <div key={pillar.key} className="card flex flex-col p-5">
+                  <p className="text-sm font-semibold text-slate-900">{pillar.title}</p>
+                  {pillar.limitations ? (
+                    <p className="mt-2 flex-1 text-xs leading-relaxed text-slate-500">
+                      {pillar.limitations}
+                    </p>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setReportPillar(pillar.key)}
+                    className="btn-ghost mt-4 self-start"
+                  >
+                    Открыть отчёт
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
       ) : null}
 
       {detail.data?.source_url ? (
@@ -292,5 +307,36 @@ function P4Section({ pillars }: { pillars: ProjectSummary["pillars"] }) {
     >
       <CoherenceView pillar={p4} />
     </Section>
+  );
+}
+
+// Compact jump-nav for a long, recording-friendly page: sits below the sticky
+// site header so both stay visible while scrolling through P1–P4/Meta.
+function LocalNav({ hasP4 }: { hasP4: boolean }) {
+  const items = [
+    { href: "#meta", label: "Приоритет" },
+    { href: "#pillars", label: "Пиллары" },
+    ...(hasP4 ? [{ href: "#p4", label: "P4 · Связи" }] : []),
+    { href: "#findings", label: "Замечания" },
+    { href: "#documents", label: "Документы" },
+    { href: "#reports", label: "Отчёты" },
+  ];
+  return (
+    <nav
+      aria-label="Разделы страницы проекта"
+      className="sticky top-16 z-20 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 py-2 backdrop-blur sm:mx-0 sm:rounded-lg sm:border sm:px-3"
+    >
+      <div className="flex gap-1 overflow-x-auto">
+        {items.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </nav>
   );
 }

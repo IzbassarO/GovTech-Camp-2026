@@ -13,6 +13,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from pydantic import ValidationError
 
@@ -66,9 +67,15 @@ class IngestOptions:
     ocr_mode: OcrMode = OcrMode.AUTO
     include_label_sources: bool = False
     force: bool = False
+    # ``full`` preserves the accepted Docling -> lightweight fallback path.
+    # Live, isolated jobs may opt into the dependency-light parsers directly;
+    # this avoids model downloads while retaining honest partial/OCR states.
+    parser_policy: Literal["full", "lightweight"] = "full"
 
 
-def _pipeline_parser_identities() -> list[tuple[str, str | None]]:
+def _pipeline_parser_identities(
+    parser_policy: Literal["full", "lightweight"] = "full",
+) -> list[tuple[str, str | None]]:
     """Everything that can influence output, for the cache key: parsers AND
     OCR engine availability/versions — installing or upgrading an OCR engine
     must invalidate previously produced (possibly partial) output."""
@@ -81,6 +88,13 @@ def _pipeline_parser_identities() -> list[tuple[str, str | None]]:
         except importlib.metadata.PackageNotFoundError:
             return "absent"
 
+    if parser_policy == "lightweight":
+        return [
+            (pymupdf_fallback.PARSER_NAME, pymupdf_fallback.parser_version()),
+            (docx_fallback.PARSER_NAME, docx_fallback.parser_version()),
+            ("ocr:tesseract", "present" if _shutil.which("tesseract") else "absent"),
+            ("pipeline-policy:lightweight", "1"),
+        ]
     return [
         (docling_parser.PARSER_NAME, docling_parser.parser_version()),
         (pymupdf_fallback.PARSER_NAME, pymupdf_fallback.parser_version()),
@@ -104,6 +118,8 @@ def _identifier_is_safe(identifier: str) -> bool:
 
 def ingest_documents(options: IngestOptions) -> BatchResult:
     """Run ingestion for the selected manifest slice."""
+    if options.parser_policy not in {"full", "lightweight"}:
+        raise ValueError(f"unsupported parser policy: {options.parser_policy!r}")
     batch = BatchResult(started_at=utc_now_iso())
     projects = load_manifest(options.manifest_path)
 
@@ -268,7 +284,7 @@ def _ingest_one(
     out_dir = document_output_dir(output_root, project.project_id, document.document_id)
     cache_key = compute_cache_key(
         source_sha256=document.sha256,
-        parser_names_and_versions=_pipeline_parser_identities(),
+        parser_names_and_versions=_pipeline_parser_identities(options.parser_policy),
         ocr_mode=options.ocr_mode.value,
     )
     if not options.force and is_cached(out_dir, cache_key):
@@ -284,11 +300,17 @@ def _ingest_one(
 
     if route is ParserRoute.PDF:
         analysis = analyze_pdf(local_path)
-        parsed, attempts, fallback_used = _parse_pdf_with_fallback(
-            local_path, analysis, options.ocr_mode, project.languages
-        )
+        if options.parser_policy == "lightweight":
+            parsed, attempts = _parse_pdf_lightweight(local_path, analysis, options.ocr_mode)
+        else:
+            parsed, attempts, fallback_used = _parse_pdf_with_fallback(
+                local_path, analysis, options.ocr_mode, project.languages
+            )
     else:
-        parsed, attempts, fallback_used = _parse_docx_with_fallback(local_path)
+        if options.parser_policy == "lightweight":
+            parsed, attempts = _parse_docx_lightweight(local_path)
+        else:
+            parsed, attempts, fallback_used = _parse_docx_with_fallback(local_path)
 
     if parsed is None:
         result.reason = "all_parsers_failed"
@@ -423,6 +445,61 @@ def _relative_to_root(path: Path, repo_root: Path) -> str:
         return str(path.relative_to(repo_root))
     except ValueError:
         return str(path)
+
+
+def _parse_pdf_lightweight(
+    local_path: Path,
+    analysis: PdfAnalysis,
+    ocr_mode: OcrMode,
+) -> tuple[ParsedDocument | None, list[ParserAttempt]]:
+    """Run the PyMuPDF parser as the selected parser, not as a fallback.
+
+    This opt-in path is intended for isolated live jobs whose runtime image
+    deliberately omits Docling/EasyOCR. The accepted default path below is
+    unchanged.
+    """
+    try:
+        parsed = pymupdf_fallback.parse_pdf_fallback(local_path, analysis, ocr_mode)
+        return parsed, [
+            ParserAttempt(
+                parser_name=pymupdf_fallback.PARSER_NAME,
+                parser_version=parsed.parser_version,
+                status=parsed.status,
+            )
+        ]
+    except Exception as exc:
+        return None, [
+            ParserAttempt(
+                parser_name=pymupdf_fallback.PARSER_NAME,
+                parser_version=pymupdf_fallback.parser_version(),
+                status="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        ]
+
+
+def _parse_docx_lightweight(
+    local_path: Path,
+) -> tuple[ParsedDocument | None, list[ParserAttempt]]:
+    """Run python-docx directly for an isolated dependency-light job."""
+    try:
+        parsed = docx_fallback.parse_docx_fallback(local_path)
+        return parsed, [
+            ParserAttempt(
+                parser_name=docx_fallback.PARSER_NAME,
+                parser_version=parsed.parser_version,
+                status=parsed.status,
+            )
+        ]
+    except Exception as exc:
+        return None, [
+            ParserAttempt(
+                parser_name=docx_fallback.PARSER_NAME,
+                parser_version=docx_fallback.parser_version(),
+                status="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        ]
 
 
 def _parse_pdf_with_fallback(

@@ -206,62 +206,91 @@ function FindingsTable({
   onOpen: (id: string) => void;
 }) {
   return (
-    <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Серьёзность</th>
-              <th className="px-4 py-3 font-medium">Пиллар</th>
-              <th className="px-4 py-3 font-medium">Замечание</th>
-              <th className="hidden px-4 py-3 font-medium md:table-cell">Документ</th>
-              <th className="hidden px-4 py-3 font-medium lg:table-cell">Стр.</th>
-              <th className="hidden px-4 py-3 font-medium lg:table-cell">Статус</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {findings.map((f) => (
-              <tr
-                key={f.finding_id}
-                tabIndex={0}
-                role="button"
-                onClick={() => onOpen(f.finding_id)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onOpen(f.finding_id);
-                  }
-                }}
-                className="cursor-pointer transition-colors hover:bg-accent-50/40 focus:bg-accent-50/60"
-              >
-                <td className="whitespace-nowrap px-4 py-3">
-                  <SeverityBadge severity={f.severity} />
-                </td>
-                <td className="whitespace-nowrap px-4 py-3">
-                  <span className="chip bg-slate-100 text-slate-600">{f.pillar_id}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <p className="font-medium text-slate-800">{f.title}</p>
-                  <p className="text-xs text-slate-400">{f.finding_type_label}</p>
-                </td>
-                <td className="hidden px-4 py-3 text-slate-600 md:table-cell">
-                  {f.document_type ?? "пакет"}
-                </td>
-                <td className="hidden px-4 py-3 tabular-nums text-slate-500 lg:table-cell">
-                  {f.page_references.length ? f.page_references.join(", ") : "—"}
-                </td>
-                <td className="hidden px-4 py-3 lg:table-cell">
-                  {f.is_demo ? (
-                    <span className="chip bg-amber-50 text-amber-700">демо</span>
-                  ) : (
-                    <span className="text-xs text-slate-400">на проверку</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <>
+      {/* Narrow screens: stacked cards instead of a cramped/scrolling table. */}
+      <div className="space-y-2.5 sm:hidden">
+        {findings.map((f) => (
+          <button
+            key={f.finding_id}
+            type="button"
+            onClick={() => onOpen(f.finding_id)}
+            className="card w-full p-4 text-left transition-colors hover:bg-accent-50/40 focus-visible:bg-accent-50/60"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <SeverityBadge severity={f.severity} />
+              <span className="chip bg-slate-100 text-slate-600">{f.pillar_id}</span>
+            </div>
+            <p className="mt-2 text-sm font-medium leading-snug text-slate-800">{f.title}</p>
+            <p className="mt-0.5 text-xs text-slate-400">{f.finding_type_label}</p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+              <span>{f.document_type ?? "пакет"}</span>
+              {f.page_references.length ? (
+                <span className="tabular-nums">стр. {f.page_references.join(", ")}</span>
+              ) : null}
+              {f.is_demo ? <span className="chip bg-amber-50 text-amber-700">демо</span> : null}
+            </div>
+          </button>
+        ))}
       </div>
-    </div>
+
+      {/* Tablet and up: full table. */}
+      <div className="card hidden overflow-hidden sm:block">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">Серьёзность</th>
+                <th className="px-4 py-3 font-medium">Пиллар</th>
+                <th className="px-4 py-3 font-medium">Замечание</th>
+                <th className="hidden px-4 py-3 font-medium md:table-cell">Документ</th>
+                <th className="hidden px-4 py-3 font-medium lg:table-cell">Стр.</th>
+                <th className="hidden px-4 py-3 font-medium lg:table-cell">Статус</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {findings.map((f) => (
+                <tr
+                  key={f.finding_id}
+                  tabIndex={0}
+                  role="button"
+                  onClick={() => onOpen(f.finding_id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpen(f.finding_id);
+                    }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-accent-50/40 focus:bg-accent-50/60"
+                >
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <SeverityBadge severity={f.severity} />
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <span className="chip bg-slate-100 text-slate-600">{f.pillar_id}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-slate-800">{f.title}</p>
+                    <p className="text-xs text-slate-400">{f.finding_type_label}</p>
+                  </td>
+                  <td className="hidden px-4 py-3 text-slate-600 md:table-cell">
+                    {f.document_type ?? "пакет"}
+                  </td>
+                  <td className="hidden px-4 py-3 tabular-nums text-slate-500 lg:table-cell">
+                    {f.page_references.length ? f.page_references.join(", ") : "—"}
+                  </td>
+                  <td className="hidden px-4 py-3 lg:table-cell">
+                    {f.is_demo ? (
+                      <span className="chip bg-amber-50 text-amber-700">демо</span>
+                    ) : (
+                      <span className="text-xs text-slate-400">на проверку</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }

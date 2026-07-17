@@ -23,18 +23,7 @@ const WRONG_BACKEND_MESSAGE =
   `API Dalel недоступен или указан неверный адрес сервера (${API_BASE_URL}).` +
   " Проверьте, что бэкенд запущен и NEXT_PUBLIC_API_BASE_URL указывает на него.";
 
-export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      signal,
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-  } catch {
-    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
-  }
-
+async function _handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     let body: { error?: string; detail?: string } | null = null;
     try {
@@ -51,7 +40,106 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
     throw new ApiError(response.status, "wrong_backend", WRONG_BACKEND_MESSAGE);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
+}
+
+function jobTokenHeaders(accessToken: string): HeadersInit {
+  return { Accept: "application/json", "X-Dalel-Job-Token": accessToken };
+}
+
+export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      signal,
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
+  }
+  return _handleResponse<T>(response);
+}
+
+export async function apiPost<T>(
+  path: string,
+  payload: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      signal,
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
+  }
+  return _handleResponse<T>(response);
+}
+
+/** Submit real file bytes. The browser must choose the multipart boundary. */
+export async function apiPostForm<T>(
+  path: string,
+  payload: FormData,
+  signal?: AbortSignal,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      signal,
+      headers: { Accept: "application/json" },
+      body: payload,
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
+  }
+  return _handleResponse<T>(response);
+}
+
+export async function apiGetWithJobToken<T>(
+  path: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      signal,
+      headers: jobTokenHeaders(accessToken),
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
+  }
+  return _handleResponse<T>(response);
+}
+
+export async function apiDeleteWithJobToken<T>(
+  path: string,
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "DELETE",
+      signal,
+      headers: jobTokenHeaders(accessToken),
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "network_error", WRONG_BACKEND_MESSAGE);
+  }
+  return _handleResponse<T>(response);
 }
 
 export function buildQuery(params: Record<string, string | undefined | null>): string {

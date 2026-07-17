@@ -26,12 +26,17 @@ const config: Config = {
         },
       },
       fontFamily: {
+        // Deliberate, self-hosted-free system stack: zero network requests at
+        // build or runtime, so the demo never depends on an external font CDN.
+        // Every platform in this list has strong Cyrillic coverage.
         sans: [
-          "var(--font-inter)",
-          "system-ui",
+          "ui-sans-serif",
           "-apple-system",
+          "BlinkMacSystemFont",
           "Segoe UI",
           "Roboto",
+          "Helvetica Neue",
+          "Arial",
           "sans-serif",
         ],
       },

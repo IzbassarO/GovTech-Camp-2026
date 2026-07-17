@@ -8,10 +8,28 @@
 
 html {
   scroll-behavior: smooth;
+  font-feature-settings: "tnum" 1, "cv11" 1;
 }
 
 body {
   @apply bg-slate-50 text-slate-800 antialiased;
+}
+
+/* Respect reduced-motion preferences: kill scroll animation, shimmer and
+   transitions rather than just shortening them. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Visible, consistent focus ring for keyboard users. */

@@ -20,6 +20,7 @@ export default function ProjectFindingsPage() {
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Замечания проекта</h1>
       <Link
         href={`/projects/${projectId}`}
         className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-700"

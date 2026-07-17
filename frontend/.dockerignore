@@ -1,0 +1,15 @@
+# Build context is frontend/ — keep it small and secret-free.
+node_modules
+.next
+out
+build
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.log
+tsconfig.tsbuildinfo
+.DS_Store
+Dockerfile
+.dockerignore
+README.md

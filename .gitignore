@@ -1,6 +1,8 @@
 # Raw and generated datasets
 data/raw/
 data/processed/
+data/live-jobs/
+dalel-live-jobs/
 
 # Preserve metadata and annotations
 !data/manifests/

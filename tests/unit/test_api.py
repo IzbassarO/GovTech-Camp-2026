@@ -19,6 +19,7 @@ with warnings.catch_warnings():
     from fastapi.testclient import TestClient
 
 from dalel.api.app import create_app
+from dalel.api.demo import reset_demo_jobs
 from dalel.api.repository import reset_store_cache
 
 BAYTEREK = "project_003_bayterek"
@@ -28,6 +29,7 @@ BEREKE = "project_001_bereke"
 @pytest.fixture(scope="module")
 def client() -> TestClient:
     reset_store_cache()
+    reset_demo_jobs()
     return TestClient(create_app())
 
 
@@ -481,3 +483,141 @@ def test_no_absolute_paths_in_responses(client: TestClient) -> None:
     finding_id = client.get(f"/api/projects/{BEREKE}/findings").json()["findings"][0]["finding_id"]
     detail_text = client.get(f"/api/projects/{BEREKE}/findings/{finding_id}").text
     assert "/Users/" not in detail_text
+
+
+# --- demo job: upload -> animated analysis -> result ------------------------
+
+
+def test_demo_manifest_points_at_bayterek(client: TestClient) -> None:
+    body = client.get("/api/demo/manifest").json()
+    assert body["demo_project_id"] == BAYTEREK
+    assert body["project_name"] == "Bayterek"
+    assert body["prepared"] is True
+    # The dossier contract (sections, reconciliation, honesty states) is
+    # covered in depth by tests/unit/test_demo_dossier.py; here we only pin
+    # the endpoint identity and the safety invariant.
+    text = str(body)
+    # Real local source filenames (which include a private individual's
+    # surname in this dataset) must never be exposed here.
+    assert "Онгарова" not in text
+    assert "data/raw" not in text
+
+
+def test_create_demo_job_uses_real_bayterek_artifacts(client: TestClient) -> None:
+    real_summary = client.get(f"/api/projects/{BAYTEREK}/summary").json()
+    real_meta = real_summary["meta"]
+
+    response = client.post(
+        "/api/demo/jobs",
+        json={"mode": "prepared_replay"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["status"] == "completed"
+    assert body["mode"] == "prepared_replay"
+    assert body["project_id"] == BAYTEREK
+    assert body["project_name"] == "Bayterek"
+    assert (
+        body["disclaimer"]
+        == "Демонстрационный запуск воспроизводит заранее рассчитанные результаты"
+        " подготовленного проекта Bayterek."
+    )
+    assert body["result_url"] == f"/projects/{BAYTEREK}"
+    assert body.get("uploaded_file_count", 0) == 0
+    assert isinstance(body.pop("access_token"), str)
+
+    stage_ids = [s["stage_id"] for s in body["stages"]]
+    assert stage_ids == ["p0", "p0_5", "p1", "p2", "p3", "p4", "meta"]
+
+    p1 = next(s for s in body["stages"] if s["stage_id"] == "p1")
+    real_p1 = next(p for p in real_summary["pillars"] if p["pillar_id"] == "P1")
+    assert p1["headline"] == real_p1["headline"]
+
+    p2 = next(s for s in body["stages"] if s["stage_id"] == "p2")
+    assert "Демонстрационный нормативный корпус" in (p2["warning"] or "")
+
+    p3 = next(s for s in body["stages"] if s["stage_id"] == "p3")
+    assert "Доказанных числовых противоречий не обнаружено." in (p3["empty_state"] or "")
+
+    meta_stage = next(s for s in body["stages"] if s["stage_id"] == "meta")
+    # The demo job's score must be READ from the same artifacts as the real
+    # project endpoint, never a hardcoded number.
+    assert f"{real_meta['review_priority_score']:g}" in meta_stage["headline"]
+    assert "не вероятность нарушения" in (meta_stage["warning"] or "")
+
+
+def test_demo_job_rejects_every_custom_project_or_file_field(client: TestClient) -> None:
+    response = client.post(
+        "/api/demo/jobs", json={"mode": "prepared_replay", "demo_project_id": "project_999_fake"}
+    )
+    assert response.status_code == 422
+    response = client.post(
+        "/api/demo/jobs",
+        json={
+            "mode": "prepared_replay",
+            "selected_files": [{"filename": "empty.pdf", "size_bytes": 1}],
+        },
+    )
+    assert response.status_code == 422
+    assert "empty.pdf" not in response.text
+
+
+def test_demo_job_can_be_refetched_by_id(client: TestClient) -> None:
+    created = client.post("/api/demo/jobs", json={"mode": "prepared_replay"}).json()
+    token = created.pop("access_token")
+    assert client.get(f"/api/demo/jobs/{created['job_id']}").status_code in {403, 404}
+    fetched = client.get(
+        f"/api/demo/jobs/{created['job_id']}", headers={"X-Dalel-Job-Token": token}
+    ).json()
+    assert fetched == created
+
+
+def test_demo_job_unknown_id_returns_clean_404(client: TestClient) -> None:
+    response = client.get(
+        "/api/demo/jobs/demo_not-a-real-job", headers={"X-Dalel-Job-Token": "not-a-token"}
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "demo_job_not_found"
+
+
+def test_demo_job_does_not_mutate_real_project_artifacts(client: TestClient) -> None:
+    before = client.get(f"/api/projects/{BAYTEREK}/summary").json()
+    client.post("/api/demo/jobs", json={"mode": "prepared_replay"})
+    client.post("/api/demo/jobs", json={"mode": "prepared_replay"})
+    after = client.get(f"/api/projects/{BAYTEREK}/summary").json()
+    assert before == after
+
+
+def test_demo_job_has_no_absolute_paths(client: TestClient) -> None:
+    body = client.post("/api/demo/jobs", json={"mode": "prepared_replay"}).json()
+    text = str(body)
+    assert "/Users/" not in text
+    assert ".venv" not in text
+    assert "data/results" not in text
+    assert "data/raw" not in text
+
+
+# --- CORS (Docker compose demo regression) -----------------------------------
+
+
+def test_cors_env_grants_compose_frontend_origins(monkeypatch: pytest.MonkeyPatch) -> None:
+    """compose.yaml passes the browser-facing frontend origins via a
+    comma-separated ``DALEL_API_CORS_ORIGINS``; the API must grant exactly
+    those origins and nothing else."""
+    monkeypatch.setenv("DALEL_API_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    cors_client = TestClient(create_app())
+    for origin in ("http://localhost:3000", "http://127.0.0.1:3000"):
+        response = cors_client.get("/api/health", headers={"Origin": origin})
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == origin
+    unlisted = cors_client.get("/api/health", headers={"Origin": "http://evil.example"})
+    assert unlisted.status_code == 200
+    assert "access-control-allow-origin" not in unlisted.headers
+
+
+def test_cors_default_allows_local_frontend(client: TestClient) -> None:
+    """Without the env override the local dev frontend origin still works."""
+    response = client.get("/api/health", headers={"Origin": "http://localhost:3000"})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

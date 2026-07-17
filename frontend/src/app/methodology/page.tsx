@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { FileText, Gauge, Network, Scale, Sigma } from "lucide-react";
+import { ChevronDown, Database, FileText, Gauge, Network, Scale, Sigma, UserCheck } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Методология — Dalel",
@@ -20,6 +20,78 @@ function Block({
   );
 }
 
+// Pure CSS/HTML architecture diagram (no image, no chart library): dataset in,
+// four independent deterministic pillars, Meta aggregation, human decision out.
+function ArchitectureDiagram() {
+  const pillars = [
+    { id: "P1", label: "Целостность" },
+    { id: "P2", label: "Соответствие" },
+    { id: "P3", label: "Согласованность" },
+    { id: "P4", label: "Междокументная" },
+  ];
+  return (
+    <div className="card p-6">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Архитектура потока данных
+      </p>
+      <div className="mt-5 flex flex-col items-center gap-2">
+        <DiagramBox icon={Database} label="Куративный датасет v1" sub="провенанс до страницы/раздела" />
+        <ChevronDown className="h-4 w-4 text-slate-300" aria-hidden />
+
+        <div className="grid w-full max-w-2xl grid-cols-2 gap-3 sm:grid-cols-4">
+          {pillars.map((p) => (
+            <div key={p.id} className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-accent-700">
+                {p.id}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-600">{p.label}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-slate-400">независимо, детерминированно, каждый со своими доказательствами</p>
+        <ChevronDown className="h-4 w-4 text-slate-300" aria-hidden />
+
+        <DiagramBox icon={Gauge} label="Meta · интегральный балл" sub="прозрачная сумма вкладов P1–P4" accent />
+        <ChevronDown className="h-4 w-4 text-slate-300" aria-hidden />
+
+        <DiagramBox icon={UserCheck} label="Эксперт" sub="итоговое решение остаётся за человеком" />
+      </div>
+    </div>
+  );
+}
+
+function DiagramBox({
+  icon: Icon,
+  label,
+  sub,
+  accent = false,
+}: {
+  icon: typeof Database;
+  label: string;
+  sub: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={`flex w-full max-w-sm items-center gap-3 rounded-lg border p-3 ${
+        accent ? "border-navy-800 bg-navy-900 text-white" : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <span
+        className={`flex h-9 w-9 flex-none items-center justify-center rounded-lg ${
+          accent ? "bg-accent-600 text-white" : "bg-white text-accent-600"
+        }`}
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+      </span>
+      <div className="min-w-0">
+        <p className={`text-sm font-medium ${accent ? "text-white" : "text-slate-800"}`}>{label}</p>
+        <p className={`text-[11px] ${accent ? "text-slate-300" : "text-slate-500"}`}>{sub}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function MethodologyPage() {
   return (
     <div className="space-y-8">
@@ -31,6 +103,8 @@ export default function MethodologyPage() {
           Ниже — принципы и границы применимости.
         </p>
       </header>
+
+      <ArchitectureDiagram />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Block title="Доказательная архитектура">

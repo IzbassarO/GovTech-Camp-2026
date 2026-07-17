@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 
 import type { ReportResponse } from "@/lib/types";
@@ -23,13 +23,25 @@ export function ReportModal({
     [pillar],
   );
 
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<Element | null>(null);
+
   useEffect(() => {
     if (!open) return;
+    triggerRef.current = document.activeElement;
+    closeButtonRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      if (triggerRef.current instanceof HTMLElement) {
+        triggerRef.current.focus();
+      }
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -39,6 +51,7 @@ export function ReportModal({
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
+      aria-labelledby="report-modal-title"
     >
       <button
         type="button"
@@ -48,8 +61,11 @@ export function ReportModal({
       />
       <div className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl bg-white shadow-drawer">
         <header className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-sm font-semibold text-slate-900">Отчёт</h2>
+          <h2 id="report-modal-title" className="text-sm font-semibold text-slate-900">
+            Отчёт
+          </h2>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"

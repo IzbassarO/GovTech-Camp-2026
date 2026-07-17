@@ -1,7 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { FileStack, FolderKanban, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  FileStack,
+  FolderKanban,
+  GaugeCircle,
+  GitBranch,
+  ScanSearch,
+  ShieldCheck,
+  Sparkles,
+  TriangleAlert,
+  UploadCloud,
+  UserCheck,
+} from "lucide-react";
 
 import type { ProjectListItem, SystemMetrics } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
@@ -10,7 +21,21 @@ import { ErrorBlock, Section, SkeletonCard } from "@/components/primitives";
 import { StatCard } from "@/components/StatCard";
 import { ProjectCard } from "@/components/ProjectCard";
 import { PipelineSteps } from "@/components/PipelineSteps";
-import { MetaDisclaimer } from "@/components/MetaAssessmentView";
+import { MetaDisclaimer, MetaLegend } from "@/components/MetaAssessmentView";
+
+const TRUST_INDICATORS = [
+  { icon: GitBranch, label: "Детерминированный анализ" },
+  { icon: FileStack, label: "Провенанс до страницы" },
+  { icon: UserCheck, label: "Экспертная проверка" },
+  { icon: ShieldCheck, label: "Без юридических выводов" },
+];
+
+const PRODUCT_FLOW = [
+  { icon: UploadCloud, label: "Загрузите документы" },
+  { icon: ScanSearch, label: "Dalel запускает P1–P4" },
+  { icon: GaugeCircle, label: "Meta формирует приоритет проверки" },
+  { icon: UserCheck, label: "Эксперт изучает доказательства" },
+];
 
 export default function DashboardPage() {
   const metrics = useApi<SystemMetrics>("/api/system/metrics");
@@ -34,17 +59,51 @@ export default function DashboardPage() {
           детерминированный и воспроизводимый, а итоговое решение остаётся за
           экспертом — платформа не выносит юридических выводов.
         </p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link href="/projects" className="btn-primary">
-            Перейти к проектам
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Link href="/analyze/live" className="btn-primary">
+            Загрузить проект
           </Link>
           <Link
-            href="/methodology"
+            href="/projects"
             className="inline-flex items-center rounded-lg border border-navy-700 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-navy-800"
           >
-            Методология
+            Открыть готовые проекты
+          </Link>
+          <Link
+            href="/analyze/demo"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-500 hover:text-accent-100 hover:underline"
+          >
+            <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            Попробовать демо
           </Link>
         </div>
+        <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-navy-800 pt-6">
+          {TRUST_INDICATORS.map(({ icon: Icon, label }) => (
+            <li key={label} className="flex items-center gap-2 text-xs text-slate-300">
+              <Icon className="h-3.5 w-3.5 flex-none text-accent-500" aria-hidden />
+              {label}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="card p-5">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Как это работает</p>
+        <ol className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {PRODUCT_FLOW.map(({ icon: Icon, label }, index) => (
+            <li key={label} className="flex items-start gap-3">
+              <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-accent-50 text-accent-700">
+                <Icon className="h-4 w-4" aria-hidden />
+              </span>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  Шаг {index + 1}
+                </p>
+                <p className="text-sm font-medium text-slate-800">{label}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
       </section>
 
       <Section
@@ -144,7 +203,12 @@ export default function DashboardPage() {
           </Link>
         }
       >
-        {metaRankingAvailable === false ? null : <MetaDisclaimer />}
+        {metaRankingAvailable === false ? null : (
+          <div className="space-y-3">
+            <MetaDisclaimer />
+            <MetaLegend />
+          </div>
+        )}
         {projects.error ? <ErrorBlock message={projects.error} /> : null}
         {!projects.error ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -157,7 +221,7 @@ export default function DashboardPage() {
               </>
             ) : (
               rankedProjects.map((project) => (
-                <ProjectCard key={project.project_id} project={project} />
+                <ProjectCard key={project.project_id} project={project} showTopFactor />
               ))
             )}
           </div>

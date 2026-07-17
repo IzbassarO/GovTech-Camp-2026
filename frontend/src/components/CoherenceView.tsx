@@ -38,8 +38,8 @@ export function CoherenceView({ pillar }: { pillar: PillarSummary }) {
   return (
     <div className="space-y-5">
       {proven === 0 ? (
-        <div className="rounded-lg border border-accent-200 bg-accent-50 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium text-accent-800">
+        <div className="rounded-lg border border-accent-100 bg-accent-50 p-4">
+          <p className="flex items-center gap-2 text-sm font-medium text-accent-700">
             <CheckCircle2 className="h-4 w-4 flex-none" aria-hidden />
             Доказанных междокументных противоречий не обнаружено.
           </p>

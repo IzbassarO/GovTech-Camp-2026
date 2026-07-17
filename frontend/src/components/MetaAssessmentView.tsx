@@ -1,10 +1,12 @@
 import {
   AlertTriangle,
   BarChart3,
+  CheckCircle2,
   ChevronDown,
   Database,
   Gauge,
   Info,
+  Layers,
   LockKeyhole,
 } from "lucide-react";
 
@@ -43,6 +45,41 @@ export function MetaDisclaimer() {
         определить очерёдность изучения пакетов и не является выводом о юридическом
         соответствии, экологической безопасности или выдаче разрешения.
       </p>
+    </div>
+  );
+}
+
+// Explicit score / coverage / confidence distinction, shared by the dashboard
+// ranking and the projects list — the three numbers answer different
+// questions and must never be read as one blended "risk" figure.
+export function MetaLegend() {
+  const items = [
+    {
+      icon: Gauge,
+      label: "Приоритет",
+      hint: "очередность экспертной проверки, не вероятность нарушения",
+    },
+    {
+      icon: Layers,
+      label: "Покрытие",
+      hint: "доля анализа, выполненного по доступным артефактам",
+    },
+    {
+      icon: CheckCircle2,
+      label: "Уверенность",
+      hint: "надёжность оценки с учётом пропусков и демо-источников",
+    },
+  ];
+  return (
+    <div className="flex flex-wrap items-start gap-x-6 gap-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3">
+      {items.map(({ icon: Icon, label, hint }) => (
+        <p key={label} className="flex max-w-xs items-start gap-2 text-xs text-slate-600">
+          <Icon className="mt-0.5 h-3.5 w-3.5 flex-none text-accent-600" aria-hidden />
+          <span>
+            <span className="font-semibold text-slate-800">{label}</span> — {hint}
+          </span>
+        </p>
+      ))}
     </div>
   );
 }

@@ -1,0 +1,104 @@
+# DÁLEL Eco — prepared replay + isolated live analysis + frontend.
+#
+#   docker compose up --build
+#
+#   Frontend  → http://localhost:3000
+#   API       → http://localhost:8000   (health: /api/health, docs: /api/docs)
+#
+#   Stop:     docker compose down
+#   Logs:     docker compose logs -f
+#   Status:   docker compose ps
+#
+# Accepted local artifacts are MOUNTED read-only — never baked into an
+# image:
+#   data/curated      curated dataset (projects, documents, pages)
+#   data/results      accepted P1–P4 and Meta artifacts
+#   data/annotations  expert review templates — required by the Meta
+#                     replay validation that gates META availability
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      # Browser origins allowed by FastAPI CORS: the compose demo serves
+      # the frontend on localhost:3000 (127.0.0.1 is the same page reached
+      # via the alternate spelling).
+      DALEL_API_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      # Live uploads never enter accepted data directories. The tmpfs below is
+      # private to this container and disappears on container removal/restart.
+      DALEL_LIVE_JOB_DIR: /tmp/dalel-live-jobs
+      DALEL_LIVE_JOB_TTL_SECONDS: "1800"
+      DALEL_LIVE_MAX_ACTIVE_JOBS: "4"
+      DALEL_LIVE_WORKERS: "2"
+    volumes:
+      - ./data/curated:/app/data/curated:ro
+      - ./data/results:/app/data/results:ro
+      - ./data/annotations:/app/data/annotations:ro
+    tmpfs:
+      - /tmp/dalel-live-jobs:rw,noexec,nosuid,nodev,size=1073741824,mode=0700,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # python + stdlib urllib are guaranteed present in the image.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status == 200 else 1)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    # Bounded restarts: recover from a transient crash without an infinite
+    # crash loop hiding a real startup error.
+    restart: on-failure:3
+    stop_grace_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Inlined into the client bundle at build time: the URL the BROWSER
+        # uses to reach the API. Never http://api:8000 — the browser runs
+        # outside the compose network and cannot resolve service names.
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    environment:
+      # Runtime copy of the same value for consistency; all data fetching
+      # is client-side today, so the build-time inlined value is what the
+      # browser actually uses.
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    depends_on:
+      # The frontend only starts serving once the API answers /api/health,
+      # so the first page load never races a still-starting API.
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # node 20 ships global fetch.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: on-failure:3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
